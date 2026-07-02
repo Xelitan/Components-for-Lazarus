@@ -72,6 +72,10 @@ type
     // for code, the component editor and the LCL streaming system.
     procedure InternalAddSection(ASection: TXelAccordionSection);
     procedure InternalRemoveSection(ASection: TXelAccordionSection);
+    // Called by TXelAccordionSection.SetExpanded. Enforces the accordion
+    // invariant (at most one section open) no matter how Expanded was set:
+    // header click, Object Inspector, code or .lfm streaming.
+    procedure SectionExpandedChanged(ASection: TXelAccordionSection);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -186,8 +190,8 @@ begin
     Height := XAC_HEADER_HEIGHT + FExpandedHeight
   else
     Height := XAC_HEADER_HEIGHT;
-  if Assigned(FAccordion) and not (csLoading in ComponentState) then
-    FAccordion.RebuildLayout;
+  if Assigned(FAccordion) then
+    FAccordion.SectionExpandedChanged(Self);
   Invalidate;
 end;
 
@@ -349,8 +353,7 @@ end;
 procedure TXelAccordion.SetActiveSectionIndex(AValue: Integer);
 begin
   if (AValue < 0) or (AValue >= FSections.Count) then Exit;
-  FActiveSectionIndex := AValue;
-  SectionToggled(Sections[AValue]);
+  ExpandSection(AValue);
 end;
 
 procedure TXelAccordion.Loaded;
@@ -404,48 +407,41 @@ begin
   TXelAccordionSection(FSections[Index]).Free; // triggers InternalRemoveSection
 end;
 
-procedure TXelAccordion.SectionToggled(ASection: TXelAccordionSection);
+procedure TXelAccordion.SectionExpandedChanged(ASection: TXelAccordionSection);
 var
   i, Idx: Integer;
-  S: TXelAccordionSection;
 begin
+  if FSections = nil then Exit;
   Idx := FSections.IndexOf(ASection);
   if Idx < 0 then Exit;
-
-  // Collapse all, expand only the clicked one (toggle if already open)
-  for i := 0 to FSections.Count - 1 do
+  if ASection.Expanded then
   begin
-    S := Sections[i];
-    if i = Idx then
-      S.Expanded := not S.Expanded
-    else
-      S.Expanded := False;
-  end;
-
-  // Find which one is now active
-  FActiveSectionIndex := -1;
-  for i := 0 to FSections.Count - 1 do
-    if Sections[i].Expanded then
-    begin
-      FActiveSectionIndex := i;
-      Break;
-    end;
-
+    // At most one section open: collapse the others (their SetExpanded calls
+    // back here, but only through the collapsed branch — no recursion loop)
+    for i := 0 to FSections.Count - 1 do
+      if i <> Idx then Sections[i].Expanded := False;
+    FActiveSectionIndex := Idx;
+  end
+  else if FActiveSectionIndex = Idx then
+    FActiveSectionIndex := -1;
   RebuildLayout;
+end;
+
+procedure TXelAccordion.SectionToggled(ASection: TXelAccordionSection);
+begin
+  if FSections.IndexOf(ASection) < 0 then Exit;
+  // SectionExpandedChanged collapses the others and updates ActiveSectionIndex
+  ASection.Expanded := not ASection.Expanded;
   NotifyDesignerModified(Self);
   if Assigned(FOnChange) and not (csLoading in ComponentState) then
     FOnChange(Self, FActiveSectionIndex);
 end;
 
 procedure TXelAccordion.ExpandSection(Index: Integer);
-var
-  i: Integer;
 begin
   if (FSections = nil) or (Index < 0) or (Index >= FSections.Count) then Exit;
-  for i := 0 to FSections.Count - 1 do
-    Sections[i].Expanded := (i = Index);
-  FActiveSectionIndex := Index;
-  RebuildLayout;
+  // SectionExpandedChanged collapses the others and updates ActiveSectionIndex
+  Sections[Index].Expanded := True;
   if Assigned(FOnChange) and not (csLoading in ComponentState) then
     FOnChange(Self, FActiveSectionIndex);
 end;
