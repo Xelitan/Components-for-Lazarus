@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="5">
+    <PathDelim Value="\"/>
+    <Name Value="XelContainers"/>
+    <Type Value="RunAndDesignTime"/>
+    <Author Value="Xelitan.com"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <SearchPaths>
+        <OtherUnitFiles Value="."/>
+        <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+    </CompilerOptions>
+    <Description Value="Modern container controls: PageControl, SidePages, Accordion, Ribbon."/>
+    <License Value="MIT"/>
+    <Version Minor="1"/>
+    <Files Count="5">
+      <Item1>
+        <Filename Value="XelPageControl.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelPageControl"/>
+      </Item1>
+      <Item2>
+        <Filename Value="XelSidePages.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelSidePages"/>
+      </Item2>
+      <Item3>
+        <Filename Value="XelAccordion.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelAccordion"/>
+      </Item3>
+      <Item4>
+        <Filename Value="XelRibbon.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelRibbon"/>
+      </Item4>
+      <Item5>
+        <Filename Value="XelDsgn.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelDsgn"/>
+      </Item5>
+    </Files>
+    <CompatibilityMode Value="True"/>
+    <RequiredPkgs Count="3">
+      <Item1>
+        <PackageName Value="IDEIntf"/>
+      </Item1>
+      <Item2>
+        <PackageName Value="LCL"/>
+      </Item2>
+      <Item3>
+        <PackageName Value="FCL"/>
+      </Item3>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
