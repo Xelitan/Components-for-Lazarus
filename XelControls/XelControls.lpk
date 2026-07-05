@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="4">
+    <PathDelim Value="\"/>
+    <Name Value="XelControls"/>
+    <Type Value="RunAndDesignTime"/>
+    <Author Value="Xelitan.com"/>
+    <Description Value="Visual controls: ToggleSwitch, RatingStars, ImageButton."/>
+    <License Value="MIT"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <SearchPaths>
+        <OtherUnitFiles Value="."/>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+    </CompilerOptions>
+    <Files Count="3">
+      <Item1>
+        <Filename Value="XelToggleSwitch.pas"/>
+        <HasRegisterProc Value="True"/>
+        <Type Value="Unit"/>
+      </Item1>
+      <Item2>
+        <Filename Value="XelRatingStars.pas"/>
+        <HasRegisterProc Value="True"/>
+        <Type Value="Unit"/>
+      </Item2>
+      <Item3>
+        <Filename Value="XelImageButton.pas"/>
+        <HasRegisterProc Value="True"/>
+        <Type Value="Unit"/>
+      </Item3>
+    </Files>
+    <RequiredPkgs Count="2">
+      <Item1>
+        <PackageName Value="LCL"/>
+      </Item1>
+      <Item2>
+        <PackageName Value="FCL"/>
+      </Item2>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
