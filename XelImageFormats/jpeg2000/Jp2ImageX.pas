@@ -45,6 +45,12 @@ type
     constructor Create; override;
     destructor Destroy; override;
     function ToBitmap: TBitmap;
+    {$IFDEF FPC}
+    // Thread-safe decode: stream -> TLazIntfImage, no widgetset (no TBitmap /
+    // Canvas / handle). Safe to call from a worker thread on GTK2/Qt/Cocoa.
+    // Caller owns the returned image (nil on failure).
+    class function ToIntfImage(Str: TStream): TLazIntfImage;
+    {$ENDIF}
   end;
 
 implementation
@@ -265,6 +271,84 @@ function TJp2Image.ToBitmap: TBitmap;
 begin
   Result := FBmp;
 end;
+
+{$IFDEF FPC}
+class function TJp2Image.ToIntfImage(Str: TStream): TLazIntfImage;
+var
+  Img : TJp2kImage;
+  Bytes: TBytes;
+  W, H, x, y, idx, n, sh, r, g, b: Integer;
+  Desc: TRawImageDescription;
+  Dst : PByte;
+  BPL : PtrInt;
+
+  function ClampByte(v: Integer): Byte;
+  begin
+    if v < 0 then v := 0
+    else if v > 255 then v := 255;
+    Result := Byte(v);
+  end;
+
+begin
+  Result := nil;
+  n := Str.Size - Str.Position;
+  if n <= 0 then Exit;
+  SetLength(Bytes, n);
+  Str.ReadBuffer(Bytes[0], n);
+
+  Img := DecodeGeneral(Bytes);   // pure Pascal; handles .jp2 and raw .jpc
+  try
+    W := Img.W;
+    H := Img.H;
+    if (W <= 0) or (H <= 0) then Exit;
+    sh := Img.Prec - 8;
+
+    Desc.Init_BPP32_B8G8R8A8_BIO_TTB(W, H);
+    Result := TLazIntfImage.Create(0, 0);
+    Result.DataDescription := Desc;
+    Result.SetSize(W, H);
+    Dst := PByte(Result.PixelData);
+    BPL := Result.DataDescription.BytesPerLine;
+
+    for y := 0 to H - 1 do
+    begin
+      for x := 0 to W - 1 do
+      begin
+        idx := y * W + x;
+        if Img.NumComps >= 3 then
+        begin
+          r := Img.Comps[0][idx];
+          g := Img.Comps[1][idx];
+          b := Img.Comps[2][idx];
+        end
+        else
+        begin
+          r := Img.Comps[0][idx];
+          g := r;
+          b := r;
+        end;
+
+        if sh > 0 then
+        begin
+          r := r shr sh; g := g shr sh; b := b shr sh;
+        end
+        else if sh < 0 then
+        begin
+          r := r shl (-sh); g := g shl (-sh); b := b shl (-sh);
+        end;
+
+        Dst[x * 4 + 0] := ClampByte(b);
+        Dst[x * 4 + 1] := ClampByte(g);
+        Dst[x * 4 + 2] := ClampByte(r);
+        Dst[x * 4 + 3] := 255;
+      end;
+      Inc(Dst, BPL);
+    end;
+  finally
+    Img.Free;
+  end;
+end;
+{$ENDIF}
 
 initialization
   TPicture.RegisterFileFormat('Jp2','JPEG 2000 Image', TJp2Image);
