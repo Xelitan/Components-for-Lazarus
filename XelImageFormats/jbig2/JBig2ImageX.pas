@@ -46,6 +46,12 @@ type
     // Decode straight from byte buffers (the form the PDF reader uses).
     procedure LoadFromBytes(const Data, Globals: TBytes);
     function ToBitmap: TBitmap;
+    {$IFDEF FPC}
+    // Thread-safe decode: stream (+ optional globals) -> TLazIntfImage, no
+    // widgetset (no TBitmap / Canvas / handle). Safe to call from a worker
+    // thread on GTK2/Qt/Cocoa. Caller owns the returned image (nil on failure).
+    class function ToIntfImage(Str: TStream; const Globals: TBytes): TLazIntfImage;
+    {$ENDIF}
   end;
 
 // Decode a JBIG2 image to 8-bit grayscale, 1 byte per pixel, row-major,
@@ -132,6 +138,46 @@ function TJBig2Image.ToBitmap: TBitmap;
 begin
   Result := FBmp;
 end;
+
+{$IFDEF FPC}
+class function TJBig2Image.ToIntfImage(Str: TStream; const Globals: TBytes): TLazIntfImage;
+var
+  Bytes, gray: TBytes;
+  n, w, h, x, y, v: Integer;
+  Desc: TRawImageDescription;
+  Dst : PByte;
+  BPL : PtrInt;
+begin
+  Result := nil;
+  n := Str.Size - Str.Position;
+  if n <= 0 then Exit;
+  SetLength(Bytes, n);
+  Str.ReadBuffer(Bytes[0], n);
+
+  if not DecodeJBig2ToGray(Bytes, Globals, w, h, gray) then Exit; // pure Pascal
+  if (w <= 0) or (h <= 0) then Exit;
+
+  Desc.Init_BPP32_B8G8R8A8_BIO_TTB(w, h);
+  Result := TLazIntfImage.Create(0, 0);
+  Result.DataDescription := Desc;
+  Result.SetSize(w, h);
+  Dst := PByte(Result.PixelData);
+  BPL := Result.DataDescription.BytesPerLine;
+
+  for y := 0 to h - 1 do
+  begin
+    for x := 0 to w - 1 do
+    begin
+      v := gray[y * w + x];   // 0 = black, 255 = white
+      Dst[x * 4 + 0] := v;
+      Dst[x * 4 + 1] := v;
+      Dst[x * 4 + 2] := v;
+      Dst[x * 4 + 3] := 255;
+    end;
+    Inc(Dst, BPL);
+  end;
+end;
+{$ENDIF}
 
 procedure TJBig2Image.Draw(ACanvas: TCanvas; const Rect: TRect);
 begin
