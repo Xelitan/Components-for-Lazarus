@@ -45,6 +45,12 @@ type
     constructor Create; override;
     destructor Destroy; override;
     function ToBitmap: TBitmap;
+    {$IFDEF FPC}
+    // Thread-safe decode: stream -> TLazIntfImage, no widgetset (no TBitmap /
+    // Canvas / handle). Safe to call from a worker thread on GTK2/Qt/Cocoa.
+    // Caller owns the returned image (nil on failure).
+    class function ToIntfImage(Str: TStream): TLazIntfImage;
+    {$ENDIF}
   end;
 
 implementation
@@ -235,6 +241,54 @@ function TJxlImage.ToBitmap: TBitmap;
 begin
   Result := FBmp;
 end;
+
+{$IFDEF FPC}
+class function TJxlImage.ToIntfImage(Str: TStream): TLazIntfImage;
+var
+  Dec         : TJxlDecoder;
+  Pixels      : TBytes;
+  W, H, x, y  : Integer;
+  RequiredSize: NativeUInt;
+  SrcIndex    : NativeInt;
+  Desc        : TRawImageDescription;
+  Dst         : PByte;
+  BPL         : PtrInt;
+begin
+  Result := nil;
+  Dec := TJxlDecoder.Create;
+  try
+    Dec.LoadFromStream(Str);          // pure Pascal decode
+    W := Dec.Width;
+    H := Dec.Height;
+    Pixels := Dec.GetRGBA8;           // straight RGBA8
+    RequiredSize := NativeUInt(W) * NativeUInt(H) * 4;
+    if (W <= 0) or (H <= 0) or
+       (NativeUInt(Length(Pixels)) < RequiredSize) then Exit;
+
+    Desc.Init_BPP32_B8G8R8A8_BIO_TTB(W, H);
+    Result := TLazIntfImage.Create(0, 0);
+    Result.DataDescription := Desc;
+    Result.SetSize(W, H);
+    Dst := PByte(Result.PixelData);
+    BPL := Result.DataDescription.BytesPerLine;
+    SrcIndex := 0;
+    for y := 0 to H - 1 do
+    begin
+      for x := 0 to W - 1 do
+      begin
+        Dst[x * 4 + 0] := Pixels[SrcIndex + 2]; // B
+        Dst[x * 4 + 1] := Pixels[SrcIndex + 1]; // G
+        Dst[x * 4 + 2] := Pixels[SrcIndex + 0]; // R
+        Dst[x * 4 + 3] := Pixels[SrcIndex + 3]; // A
+        Inc(SrcIndex, 4);
+      end;
+      Inc(Dst, BPL);
+    end;
+  finally
+    Dec.Free;
+  end;
+end;
+{$ENDIF}
 
 initialization
   TPicture.RegisterFileFormat('Jxl','JPEG XL Image', TJxlImage);
