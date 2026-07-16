@@ -48,6 +48,13 @@ type
     constructor Create; override;
     destructor Destroy; override;
     function ToBitmap: TBitmap;
+    {$IFDEF FPC}
+    // Thread-safe decode: stream -> TLazIntfImage, using ONLY the pure-Pascal
+    // decoder and a memory raw-image. Touches NO widgetset (no TBitmap, no
+    // Canvas, no handle), so it is safe to call from a worker thread on GTK2,
+    // Qt5/6 and Cocoa. The caller owns the returned image (nil on failure).
+    class function ToIntfImage(Str: TStream): TLazIntfImage;
+    {$ENDIF}
   end;
 
 implementation
@@ -205,6 +212,42 @@ function TWebpImage.ToBitmap: TBitmap;
 begin
   Result := FBmp;
 end;
+
+{$IFDEF FPC}
+class function TWebpImage.ToIntfImage(Str: TStream): TLazIntfImage;
+var
+  Data    : array of Byte;
+  DataSize: NativeUInt;
+  Pixels  : PByte;
+  W, H, y : Integer;
+  Desc    : TRawImageDescription;
+  Dst     : PByte;
+  BPL     : PtrInt;
+begin
+  Result := nil;
+  DataSize := NativeUInt(Str.Size - Str.Position);
+  if DataSize = 0 then Exit;
+  SetLength(Data, DataSize);
+  Str.ReadBuffer(Data[0], DataSize);
+
+  // WebPDecodeBGRA is pure Pascal/C - it returns a top-down BGRA buffer.
+  Pixels := WebPDecodeBGRA(@Data[0], DataSize, W, H);
+  if Pixels = nil then Exit;
+  try
+    if (W <= 0) or (H <= 0) then Exit;
+    Desc.Init_BPP32_B8G8R8A8_BIO_TTB(W, H); // B,G,R,A, top-to-bottom == decoder
+    Result := TLazIntfImage.Create(0, 0);
+    Result.DataDescription := Desc;
+    Result.SetSize(W, H);
+    Dst := PByte(Result.PixelData);
+    BPL := Result.DataDescription.BytesPerLine;
+    for y := 0 to H - 1 do
+      Move((Pixels + NativeInt(y) * W * 4)^, (Dst + NativeInt(y) * BPL)^, W * 4);
+  finally
+    FreeMem(Pixels);
+  end;
+end;
+{$ENDIF}
 
 initialization
   TPicture.RegisterFileFormat('WebP','WebP Image', TWebPImage);
