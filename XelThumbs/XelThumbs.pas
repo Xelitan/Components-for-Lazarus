@@ -175,6 +175,24 @@ implementation
 const
   CAPTION_PAD = 4;
 
+type
+  TImageParams = record
+    Width, Height: Integer;
+    Orientation: Integer;
+    ThumbWidth, ThumbHeight: Integer;
+    ThumbOrientation: Integer;
+    ThumbOffset: Int64;
+    ThumbSize: Int64;
+    function Complete: Boolean;
+  end;
+
+  function TImageParams.Complete: Boolean;
+  begin
+    Result := (Width <> 0) and (Height <> 0) and (Orientation <> 0) and
+              (ThumbWidth <> 0) and (ThumbHeight <> 0) and (ThumbOrientation <> 0) and
+              (ThumbOffset <> 0) and (ThumbSize <> 0);
+  end;
+
 // ============================ Bilinear scaling =============================
 
 // Bilinear filter written entirely in Pascal. It operates on TLazIntfImage,
@@ -308,8 +326,250 @@ begin
   end;
 end;
 
+{ Rotates image as indicated by EXIF. Possible orientation values in EXIF:
+    1 = Horizontal (normal)
+    2 = Mirror horizontal
+    3 = Rotate 180
+    4 = Mirror vertical
+    5 = Mirror horizontal and rotate 270 CW
+    6 = Rotate 90 CW
+    7 = Mirror horizontal and rotate 90 CW
+    8 = Rotate 270 CW
+}
+procedure RotateImage(var Img: TLazIntfImage; AOrientation: Integer);
+Var
+  dstImg: TLazIntfImage;
+  i, j: integer;
+  w1, h1: Integer;  // Input bitmap width and height diminished by 1
+Begin
+  if (AOrientation <= 1) then  // 1 = normal orientation
+    exit;
+
+  w1 := Img.Width - 1;
+  h1 := Img.Height - 1;
+
+  if AOrientation in [5..8] then  // Rotate by +/- 90° (and maybe mirror)
+  begin
+    dstImg := TLazIntfImage.CreateCompatible(Img, Img.Height, Img.Width);
+    case AOrientation of
+      5: // Mirror horizontally and rotate 90° CW
+         for i:=0 to w1 do
+           for j:=0 to h1 do
+             dstImg.Colors[j, i] := Img.Colors[i, j];
+      6: // Rotate 270° CW
+         for i:=0 to w1 do
+           for j:=0 to h1 do
+             dstImg.Colors[h1-j, i] := Img.Colors[i, j];
+      7: // Mirror horizontally and rotate 270° CW
+         for i:=0 to w1 do
+           for j:=0 to h1 do
+             dstImg.Colors[h1-j, w1-i] := Img.Colors[i, j];
+      8: // Rotate 90° CW
+         for i:=0 to w1 do
+           for j:=0 to h1 do
+             dstImg.Colors[j, w1-i] := Img.Colors[i, j];
+    end;
+  end else
+  if AOrientation in [2..4] then
+  begin
+    dstImg := TLazIntfImage.CreateCompatible(Img, Img.Width, Img.Height);
+    case AOrientation of
+      2: // Mirror horizontally
+         for j:=0 to h1 do
+           for i:=0 to w1 do
+             dstImg.Colors[w1-i, j] := Img.Colors[i, j];
+      3: // Rotate 180°
+         for i:=0 to w1 do
+           for j:=0 to h1 do
+             dstImg.Colors[w1-i, h1-j] := Img.Colors[i, j];
+      4: // Mirror vertically
+         for i:=0 to w1 do
+           for j:=0 to h1 do
+             dstImg.Colors[i, h1-j] := Img.Colors[i, j];
+    end;
+  end else
+    exit;
+
+  Img.Free;
+  Img := dstImg;
+end;
+
+procedure ReadImageParamsFromEXIF(Str: TStream; var ImageParams: TImageParams);
+type
+  TTiffHeader = packed record
+    BOM: Array[0..1] of AnsiChar;   // 'II' for little endian, 'MM' for big endian
+    Signature: Word;   // Signature (42)
+    IFDOffset: DWord;  // Offset to where IFD0 begins from start of TIFF header
+  end;
+  TIFDRecord = packed record
+    TagID: Word;
+    DataType: Word;
+    DataCount: DWord;
+    DataValue: DWord;
+  end;
+const
+  EXIF_SIGNATURE: array[0..5] of AnsiChar = ('E', 'x', 'i', 'f', #0, #0);
+  IFD0 = 0;
+  IFD1 = 1;
+var
+  pTIFF: Int64;
+
+  procedure ReadIFD(IFD: Byte; IsBigEndian: Boolean);
+  var
+    numRecords: Word;
+    i, n: Integer;
+    ifdRec: TIFDRecord;
+  begin
+    numRecords := Str.ReadWord;
+    if IsBigEndian then
+      numRecords := BEToN(numRecords);
+
+    ifdRec := Default(TIFDRecord);
+
+    for i := 1 to numRecords do
+    begin
+      n := SizeOf(ifdRec);
+      if n <> Str.Read(ifdRec, n) then
+        exit;
+      if IsBigEndian then
+      begin
+        ifdRec.TagID := BEToN(ifdRec.TagID);
+        ifdRec.DataType := BEToN(ifdRec.DataType);
+        ifdRec.DataCount := BEToN(ifdRec.DataCount);
+        ifdRec.DataValue := BEToN(ifdRec.DataValue);
+      end;
+      case IFD of
+        IFD0:
+           case ifdRec.TagID of
+             $0100: ImageParams.Width := ifdRec.DataValue;
+             $0101: ImageParams.Height := ifdRec.DataValue;
+             $0112: ImageParams.Orientation := ifdRec.DataValue;
+           end;
+        IFD1:
+          case ifdRec.TagID of
+            $0100: ImageParams.ThumbWidth := ifdRec.DataValue;
+            $0101: ImageParams.ThumbHeight := ifdRec.DataValue;
+            $0112: ImageParams.ThumbOrientation := ifdRec.DataValue;
+            $0201: ImageParams.ThumbOffset := ifdRec.DataValue + pTIFF;
+            $0202: ImageParams.ThumbSize := ifdRec.DataValue;
+          end;
+      end;
+    end;
+  end;
+
+var
+  exifHdr: array[0..5] of AnsiChar = #0#0#0#0#0#0;
+  tiffHdr: TTiffHeader;
+  bigEndian: Boolean;
+  n: Integer;
+  offs: DWord;
+begin
+  // To silence the compiler...
+  tiffHdr := Default(TTiffHeader);
+
+  // Read EXIF header
+  n := SizeOf(exifHdr);
+  if n <> Str.Read(exifHdr, n) then
+    exit;
+  if not CompareMem(@exifHdr[0], @EXIF_SIGNATURE[0], n) then
+    exit;
+
+  // Read TIFF header
+  pTIFF := Str.Position;  // Start of TIFF header
+  n := SizeOf(tiffHdr);
+  if Str.Read(tiffHdr, n) <> n then
+    exit;
+  if (tiffHdr.BOM[0] = 'M') and (tiffHdr.BOM[1] = 'M') then
+    bigEndian := true
+  else if (tiffHdr.BOM[0] = 'I') and (tiffHdr.BOM[1] = 'I') then
+    bigEndian := false
+  else
+    exit;
+  if bigEndian then
+  begin
+    tiffHdr.Signature := BEToN(tiffHdr.Signature);
+    tiffHdr.IFDOffset := BEToN(tiffHdr.IFDOffset);  // Offset to IFD0 (1st EXIF directory)
+  end;
+  if tiffHdr.Signature <> 42 then
+    exit;
+  Str.Position := pTIFF + tiffHdr.IFDOffset;
+
+  // Iterate over IFD0 to get image orientation
+  ReadIFD(IFD0, bigEndian);
+
+  // Read offset to IFD1 and move to IFD1
+  offs := Str.ReadDWord;
+  if bigEndian then offs := BEToN(offs);
+  if offs = 0 then    // No IFD1 --> No thumbnail in EXIF
+    exit;
+  Str.Position := pTIFF + offs;
+
+  // Iterate over IFD1 records
+  ReadIFD(IFD1, bigEndian);
+end;
+
+procedure ReadImageParamsFromSOF(Str: TStream; var ImageParams: TImageParams);
+type
+  TSOFRecord = packed record
+    DataPrecision: Word;
+    ImageHeight: Word;
+    ImageWidth: Word;
+    // there are more elements, skipped here
+  end;
+var
+  sof: TSOFRecord;
+begin
+  sof := Default(TSOFRecord);
+  if Str.Read(sof, SizeOf(sof)) < SizeOf(sof) then
+    exit;
+  ImageParams.Width := sof.ImageWidth;
+  ImageParams.Height := sof.ImageHeight;
+end;
+
+function ReadImageParams(Str: TStream; var ImageParams: TImageParams): Boolean;
+var
+  streamSize, p: Int64;
+  marker: Byte;
+  segLen: Integer;
+begin
+  Result := false;
+  ImageParams := Default(TImageParams);
+
+  if not ((Str.ReadByte = $FF) and (Str.ReadByte = $D8)) then // $D8 = "start of image"
+    exit;
+
+  streamSize := Str.Size;
+
+  p := Str.Position;
+  while p < streamSize do
+  begin
+    repeat
+      marker := Str.ReadByte;
+    until marker <> $FF;
+
+    segLen := BEToN(Str.ReadWord);
+    if segLen < 2 then
+      Continue;
+    p := Str.Position;
+
+    case marker of
+      $C0..$C3, $C5..$C7, $C9..$CB, $CE, $CF:
+        // SOF0..SOF15 (C0..CF) hold the frame size, except DHT/JPG/DAC (C4/C8/CC)
+        ReadImageParamsFromSOF(Str, ImageParams);
+      $E1:  // EXIF segment
+        ReadImageParamsFromEXIF(Str, ImageParams)
+    end;
+    if ImageParams.Complete then break;
+    p := p + segLen - 2;
+    Str.Position := p;
+  end;
+  Result := true;
+end;
+
 // Reads a JPEG's pixel dimensions straight from the SOF marker without decoding
 // the image. Pure stream parsing - thread-safe. Leaves the stream position moved.
+
+// wp: functionality included in ReadImageParamsFromSOF, kept for reference
 function ReadJpegSize(Str: TStream; out W, H: Integer): Boolean;
 var
   b, marker, lenHi, lenLo: Byte;
@@ -386,19 +646,24 @@ end;
 
 // Thread-safe image loader. Uses ONLY FPImage (pure Pascal, no widgetset), so it
 // is safe to call from a worker thread on every platform (GTK2/Qt/Cocoa included).
-// For JPEGs it decodes at a reduced DCT scale (jsHalf/Quarter/Eighth) chosen from
-// the real image size vs the AMaxW x AMaxH thumbnail frame - much faster and far
-// less memory than decoding full size just to shrink it afterwards.
+// For JPEGs it first tries to read the embedded thumbnail if available and
+// sufficiently large to fit into the AMaxW x AMaxH frame (extremely fast).
+// Otherwise it decodes at a reduced DCT scale (jsHalf/Quarter/Eighth) chosen
+// from the real image size vs the AMaxW x AMaxH thumbnail frame - much faster
+// and far less memory than decoding full size just to shrink it afterwards.
 // Returns nil if FPImage has no reader for this file (or it is corrupt); the
 // caller then falls back to a main-thread widgetset decode.
 function LoadIntfImageThreadSafe(const AFileName: string;
   AMaxW, AMaxH: Integer): TLazIntfImage;
+const
+  READ_THUMBNAIL_IMAGE = true;  // set to false to compare speed without thumbnail reading
 var
   Desc: TRawImageDescription;
   ext: string;
   fs: TFileStream;
+  stream: TStream;
   reader: TFPReaderJPEG;
-  jw, jh: Integer;
+  imgParams: TImageParams;
 begin
   Result := nil;
   ext := LowerCase(ExtractFileExt(AFileName));
@@ -407,22 +672,57 @@ begin
   begin
     fs := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
     try
-      Result := TLazIntfImage.Create(0, 0);
-      try
-        Desc.Init_BPP32_B8G8R8A8_BIO_TTB(0, 0);
-        Result.DataDescription := Desc;
-        reader := TFPReaderJPEG.Create;
+      imgParams := Default(TImageParams);
+      if ReadImageParams(fs, imgParams) then
+      begin
+        fs.Position := 0;
+        Result := TLazIntfImage.Create(0, 0);
         try
-          if ReadJpegSize(fs, jw, jh) then
-            reader.Scale := PickJpegScale(jw, jh, AMaxW, AMaxH);
-          reader.Performance := jpBestSpeed; // fast IDCT - fine for thumbnails
-          fs.Position := 0;
-          Result.LoadFromStream(fs, reader);
-        finally
-          reader.Free;
+          Desc.Init_BPP32_B8G8R8A8_BIO_TTB(0, 0);
+          Result.DataDescription := Desc;
+          reader := TFPReaderJPEG.Create;
+          try
+            reader.Performance := jpBestSpeed;  // fast IDCT - fine for thumbnails
+            // Read thumbnail image, if available and sufficiently large
+            if READ_THUMBNAIL_IMAGE and
+               (imgParams.ThumbOffset > 0) and (imgParams.ThumbSize > 0) and
+               ((imgParams.ThumbWidth = 0) and (imgParams.ThumbHeight = 0) or
+                (imgParams.ThumbWidth >= AMaxW) or (imgParams.ThumbHeight >= AMaxH)
+               ) then
+            {%H-}begin
+              stream := TMemoryStream.Create;
+              try
+                fs.Position := imgParams.ThumbOffset;
+                stream.CopyFrom(fs, imgParams.ThumbSize);
+                stream.Position := 0;
+                Result.LoadFromStream(stream, reader);
+              finally
+                stream.Free;
+              end;
+              RotateImage(Result, imgParams.ThumbOrientation);
+              // Thumbnail size not in EXIF block --> use thumbnail image size directly.
+              if (imgParams.ThumbWidth = 0) or (imgParams.ThumbHeight = 0) then
+              begin
+                imgParams.ThumbWidth := Result.Width;
+                imgParams.ThumbHeight := Result.Height;
+              end;
+              // Accept thumbnail only when it is sufficiently large
+              if (imgParams.ThumbWidth >= AMaxW) or (imgParams.ThumbHeight >= AMaxH) then
+                exit;
+            end;
+
+            // Read full image at reduced size
+            if (imgParams.Width > 0) and (imgParams.Height > 0) then
+              reader.Scale := PickJpegScale(imgParams.Width, imgParams.Height, AMaxW, AMaxH);
+            fs.Position := 0;
+            Result.LoadFromStream(fs, reader);
+            RotateImage(Result, imgParams.Orientation);
+          finally
+            reader.Free;
+          end;
+        except
+          FreeAndNil(Result);
         end;
-      except
-        FreeAndNil(Result);
       end;
     finally
       fs.Free;
@@ -583,7 +883,10 @@ var
   Item: TThumbItem;
   fn: string;
   Src: TLazIntfImage;
+  t: Int64;
 begin
+  t := GetTickCount64;
+
   while not Terminated do
   begin
     idx := FOwner.GetNextJob;
@@ -658,6 +961,8 @@ begin
 
   // signal completion - always, regardless of Terminate
   InterlockedDecrement(FOwner.FActiveLoaders);
+
+  t := GetTickCount64 - t;
 end;
 
 // =============================== TXelThumbs ================================
