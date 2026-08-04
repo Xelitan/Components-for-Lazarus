@@ -34,7 +34,7 @@ unit WebPAnimated;
 interface
 
 uses Classes, SysUtils, Graphics,
-     WebPDec, BitmapEveryX;
+     AnimationCommon, WebPDec, BitmapEveryX;
 
 type
   { One composited animation frame: a full-canvas bitmap and its display time. }
@@ -44,7 +44,7 @@ type
   end;
 
   { TWebPAnimation }
-  TWebPAnimation = class
+  TWebPAnimation = class(TCustomAnimation)
   private
     FFrames:    array of TWebPFrame;
     FWidth:     Integer;
