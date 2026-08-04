@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="5">
+    <PathDelim Value="\"/>
+    <Name Value="XelFonts"/>
+    <Type Value="RunAndDesignTime"/>
+    <Author Value="www.xelitan.com"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <PathDelim Value="\"/>
+      <SearchPaths>
+        <OtherUnitFiles Value="types;types\Brotli"/>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+      <Parsing>
+        <SyntaxOptions>
+          <IncludeAssertionCode Value="True"/>
+        </SyntaxOptions>
+      </Parsing>
+      <CodeGeneration>
+        <Checks>
+          <IOChecks Value="True"/>
+        </Checks>
+      </CodeGeneration>
+      <Other>
+        <Verbosity>
+          <ShowNotes Value="False"/>
+          <ShowHints Value="False"/>
+        </Verbosity>
+      </Other>
+    </CompilerOptions>
+    <Description Value="XelFonts — load OTF, TTF, WOFF, WOFF2 and SVG fonts at run time and register them privately for the application, with no system installation.
+
+TXelFontManager converts every source format to a plain sfnt (SVG and WOFF2 end up as CFF OpenType) and hands it to GDI on Windows or fontconfig on Unix. TXelFontPreview paints a live sample.
+
+Pure Pascal — no DLLs, no external tools."/>
+    <License Value="MIT"/>
+    <Version Major="1"/>
+    <Files Count="5">
+      <Item1>
+        <Filename Value="XelFontTypes.pas"/>
+        <UnitName Value="XelFontTypes"/>
+      </Item1>
+      <Item2>
+        <Filename Value="XelFontConvert.pas"/>
+        <UnitName Value="XelFontConvert"/>
+      </Item2>
+      <Item3>
+        <Filename Value="XelFontInstall.pas"/>
+        <UnitName Value="XelFontInstall"/>
+      </Item3>
+      <Item4>
+        <Filename Value="XelFontManager.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelFontManager"/>
+      </Item4>
+      <Item5>
+        <Filename Value="XelFontPreview.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelFontPreview"/>
+      </Item5>
+    </Files>
+    <RequiredPkgs Count="2">
+      <Item1>
+        <PackageName Value="LCL"/>
+      </Item1>
+      <Item2>
+        <PackageName Value="FCL"/>
+      </Item2>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
