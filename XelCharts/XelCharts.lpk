@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="5">
+    <PathDelim Value="\"/>
+    <Name Value="XelCharts"/>
+    <Type Value="RunAndDesignTime"/>
+    <Author Value="xelitan.com"/>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <PathDelim Value="\"/>
+      <SearchPaths>
+        <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+      <Other>
+        <Verbosity>
+          <ShowNotes Value="False"/>
+          <ShowHints Value="False"/>
+        </Verbosity>
+      </Other>
+    </CompilerOptions>
+    <Description Value="XelCharts - TXelLineChart, TXelBarChart and TXelPieChart."/>
+    <License Value="MIT"/>
+    <Version Major="1"/>
+    <Files>
+      <Item>
+        <Filename Value="XelChartTypes.pas"/>
+        <UnitName Value="XelChartTypes"/>
+      </Item>
+      <Item>
+        <Filename Value="XelChartBase.pas"/>
+        <UnitName Value="XelChartBase"/>
+      </Item>
+      <Item>
+        <Filename Value="XelLineChart.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelLineChart"/>
+      </Item>
+      <Item>
+        <Filename Value="XelBarChart.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelBarChart"/>
+      </Item>
+      <Item>
+        <Filename Value="XelPieChart.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelPieChart"/>
+      </Item>
+      <Item>
+        <Filename Value="XelSparkline.pas"/>
+        <HasRegisterProc Value="True"/>
+        <UnitName Value="XelSparkline"/>
+      </Item>
+    </Files>
+    <RequiredPkgs>
+      <Item>
+        <PackageName Value="LCL"/>
+      </Item>
+    </RequiredPkgs>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
