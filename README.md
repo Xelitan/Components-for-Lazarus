@@ -1,5 +1,8 @@
 # XelCharts usage
 ```
+uses XelChartTypes, XelLineChart, XelBarChart, XelPieChart, XelSparkline;
+
+
 const Months : array[0..11] of String =
   ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
