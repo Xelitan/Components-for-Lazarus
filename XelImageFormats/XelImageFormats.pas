@@ -21,7 +21,15 @@ uses
   VpxBoolCoder, JpegBitStream, JpegBlockImage, JpegCodes, JpegComponentInfo, 
   JpegHeader, JpegHuffman, JpegPositionState, JpegRead, JpegRowSpec, 
   JpegScanDecoder, JpegWrite, SimpleSVG, SvgImageX, WebPImageX, BitmapEveryX, 
-  WebPDec, WebPEnc, WebPAnimate, WebPAnimated;
+  WebPDec, WebPEnc, WebPAnimate, WebPAnimated, AnimationCommon, bpg_bits, 
+  bpg_cabac, bpg_cabac_enc, bpg_common, bpg_container, bpg_enc, bpg_enc_rd, 
+  bpg_enc_trial, bpg_frame, bpg_hevc, bpg_hevc_cabac, bpg_hevc_defs, 
+  bpg_hevc_filter, bpg_hevc_mvs, bpg_hevc_ps, bpg_hevc_refs, bpg_hevc_sei, 
+  bpg_hevcdsp, bpg_hevcdsp_enc, bpg_hevcmc, bpg_hevcpred, bpg_output, 
+  bpg_ps_enc, bpg_putbits, bpg_sao_enc, bpg_scan, bpg_slice_enc, 
+  bpg_syntax_enc, BPGImageX, flif_chance, flif_colorrange, flif_common, 
+  flif_crc32, flif_dec, flif_enc, flif_image, flif_io, flif_maniac, flif_rac, 
+  flif_symbol, flif_transform, flif_types, FLIFImageX;
 
 implementation
 

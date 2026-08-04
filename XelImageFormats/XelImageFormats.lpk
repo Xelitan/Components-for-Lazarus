@@ -6,14 +6,14 @@
     <CompilerOptions>
       <Version Value="11"/>
       <SearchPaths>
-        <IncludeFiles Value="jbig2"/>
-        <OtherUnitFiles Value="jbig2;jpeg2000;jpeg-xl;jpeg-xl/brotli;lepton;svg;webp"/>
+        <IncludeFiles Value="jbig2;bpg;flif"/>
+        <OtherUnitFiles Value="jbig2;jpeg2000;jpeg-xl;jpeg-xl/brotli;lepton;svg;webp;bpg;flif"/>
         <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
     <Description Value="Native FPC/Lazarus decoders/encoders for JBIG2, JPEG 2000, JPEG XL, Lepton, SVG and WebP.  Installing this package registers all six formats with TPicture (.jb2, .jp2, .jxl, .lep, .svg, .webp), so LoadFromFile/SaveToFile work out of the box."/>
     <License Value="See per-subdirectory LICENSE files (Apache-2.0, MIT, JasPer-2.0)."/>
-    <Version Major="1" Minor="1"/>
+    <Version Major="1" Minor="4"/>
     <Files>
       <Item>
         <Filename Value="XelImageFormats.pas"/>
@@ -319,6 +319,242 @@
         <Filename Value="webp/WebPAnimated.pas"/>
         <UnitName Value="WebPAnimated"/>
       </Item>
+      <Item>
+        <Filename Value="AnimationCommon.pas"/>
+        <UnitName Value="AnimationCommon"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_bits.pas"/>
+        <UnitName Value="bpg_bits"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_cabac.pas"/>
+        <UnitName Value="bpg_cabac"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_cabac_enc.pas"/>
+        <UnitName Value="bpg_cabac_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_common.pas"/>
+        <UnitName Value="bpg_common"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_container.pas"/>
+        <UnitName Value="bpg_container"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_enc.pas"/>
+        <UnitName Value="bpg_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_enc_rd.pas"/>
+        <UnitName Value="bpg_enc_rd"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_enc_trial.pas"/>
+        <UnitName Value="bpg_enc_trial"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_frame.pas"/>
+        <UnitName Value="bpg_frame"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc.pas"/>
+        <UnitName Value="bpg_hevc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc_cabac.pas"/>
+        <UnitName Value="bpg_hevc_cabac"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc_defs.pas"/>
+        <UnitName Value="bpg_hevc_defs"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc_filter.pas"/>
+        <UnitName Value="bpg_hevc_filter"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc_mvs.pas"/>
+        <UnitName Value="bpg_hevc_mvs"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc_ps.pas"/>
+        <UnitName Value="bpg_hevc_ps"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc_refs.pas"/>
+        <UnitName Value="bpg_hevc_refs"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevc_sei.pas"/>
+        <UnitName Value="bpg_hevc_sei"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevcdsp.pas"/>
+        <UnitName Value="bpg_hevcdsp"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevcdsp_enc.pas"/>
+        <UnitName Value="bpg_hevcdsp_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevcmc.pas"/>
+        <UnitName Value="bpg_hevcmc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_hevcpred.pas"/>
+        <UnitName Value="bpg_hevcpred"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_output.pas"/>
+        <UnitName Value="bpg_output"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_ps_enc.pas"/>
+        <UnitName Value="bpg_ps_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_putbits.pas"/>
+        <UnitName Value="bpg_putbits"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_sao_enc.pas"/>
+        <UnitName Value="bpg_sao_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_scan.pas"/>
+        <UnitName Value="bpg_scan"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_slice_enc.pas"/>
+        <UnitName Value="bpg_slice_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/bpg_syntax_enc.pas"/>
+        <UnitName Value="bpg_syntax_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/BPGImageX.pas"/>
+        <UnitName Value="BPGImageX"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/cabac_tables.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/golomb_tables.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/residual_enc.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/scan_tables.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/t_cabac.lpr"/>
+        <Type Value="Text"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/t_enc.lpr"/>
+        <Type Value="Text"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/t_ps.lpr"/>
+        <Type Value="Text"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/t_residual.lpr"/>
+        <Type Value="Text"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/t_residual2.lpr"/>
+        <Type Value="Text"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/t_transform.lpr"/>
+        <Type Value="Text"/>
+      </Item>
+      <Item>
+        <Filename Value="bpg/t_trial.lpr"/>
+        <Type Value="Text"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_chance.pas"/>
+        <UnitName Value="flif_chance"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_colorrange.pas"/>
+        <UnitName Value="flif_colorrange"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_common.pas"/>
+        <UnitName Value="flif_common"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_crc32.pas"/>
+        <UnitName Value="flif_crc32"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_dec.pas"/>
+        <UnitName Value="flif_dec"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_enc.pas"/>
+        <UnitName Value="flif_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_image.pas"/>
+        <UnitName Value="flif_image"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_io.pas"/>
+        <UnitName Value="flif_io"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_maniac.pas"/>
+        <UnitName Value="flif_maniac"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_rac.pas"/>
+        <UnitName Value="flif_rac"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_symbol.pas"/>
+        <UnitName Value="flif_symbol"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_transform.pas"/>
+        <UnitName Value="flif_transform"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/flif_types.pas"/>
+        <UnitName Value="flif_types"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/FLIFImageX.pas"/>
+        <UnitName Value="FLIFImageX"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/plane_decl.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/plane_impl.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/transform_cb.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="flif/transform_frame.inc"/>
+        <Type Value="Include"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
@@ -332,7 +568,7 @@
       <UnitPath Value="$(PkgOutDir)"/>
     </UsageOptions>
     <PublishOptions>
-      <Version Value="1"/>
+      <Version Value="2"/>
       <UseFileFilters Value="True"/>
     </PublishOptions>
   </Package>
