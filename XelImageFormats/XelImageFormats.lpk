@@ -6,14 +6,14 @@
     <CompilerOptions>
       <Version Value="11"/>
       <SearchPaths>
-        <IncludeFiles Value="jbig2;bpg;flif"/>
-        <OtherUnitFiles Value="jbig2;jpeg2000;jpeg-xl;jpeg-xl/brotli;lepton;svg;webp;bpg;flif"/>
+        <IncludeFiles Value="jbig2;bpg;flif;heic"/>
+        <OtherUnitFiles Value="jbig2;jpeg2000;jpeg-xl;jpeg-xl/brotli;lepton;svg;webp;bpg;flif;heic"/>
         <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
-    <Description Value="Native FPC/Lazarus decoders/encoders for JBIG2, JPEG 2000, JPEG XL, Lepton, SVG and WebP.  Installing this package registers all six formats with TPicture (.jb2, .jp2, .jxl, .lep, .svg, .webp), so LoadFromFile/SaveToFile work out of the box."/>
+    <Description Value="Native FPC/Lazarus decoders/encoders for JBIG2, JPEG 2000, JPEG XL, Lepton, HEIC, BPG, SVG and WebP.  Installing this package registers all six formats with TPicture (.jb2, .jp2, .jxl, .lep, .svg, .webp, .bpg), so LoadFromFile/SaveToFile work out of the box."/>
     <License Value="See per-subdirectory LICENSE files (Apache-2.0, MIT, JasPer-2.0)."/>
-    <Version Major="1" Minor="4"/>
+    <Version Major="1" Minor="5"/>
     <Files>
       <Item>
         <Filename Value="XelImageFormats.pas"/>
@@ -553,6 +553,250 @@
       </Item>
       <Item>
         <Filename Value="flif/transform_frame.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Bits.pas"/>
+        <UnitName Value="Av1.Bits"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Cdf.pas"/>
+        <UnitName Value="Av1.Cdf"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.CdfData.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Decoder.pas"/>
+        <UnitName Value="Av1.Decoder"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Dq8.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.DqHi.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Frame.pas"/>
+        <UnitName Value="Av1.Frame"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Ipred.pas"/>
+        <UnitName Value="Av1.Ipred"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Itx.pas"/>
+        <UnitName Value="Av1.Itx"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.ItxAdst.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.ItxDct32.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.ItxDct64.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.LoopFilter.pas"/>
+        <UnitName Value="Av1.LoopFilter"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Msac.pas"/>
+        <UnitName Value="Av1.Msac"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Obu.pas"/>
+        <UnitName Value="Av1.Obu"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.Recon.pas"/>
+        <UnitName Value="Av1.Recon"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.ScanData.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Av1.SmWeights.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/cabac_tables.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/FilterIntraTaps.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/golomb_tables.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_bits.pas"/>
+        <UnitName Value="h265_bits"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_cabac.pas"/>
+        <UnitName Value="h265_cabac"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_cabac_enc.pas"/>
+        <UnitName Value="h265_cabac_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_common.pas"/>
+        <UnitName Value="h265_common"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_container.pas"/>
+        <UnitName Value="h265_container"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_enc.pas"/>
+        <UnitName Value="h265_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_enc_rd.pas"/>
+        <UnitName Value="h265_enc_rd"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_enc_trial.pas"/>
+        <UnitName Value="h265_enc_trial"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_frame.pas"/>
+        <UnitName Value="h265_frame"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc.pas"/>
+        <UnitName Value="h265_hevc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc_cabac.pas"/>
+        <UnitName Value="h265_hevc_cabac"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc_defs.pas"/>
+        <UnitName Value="h265_hevc_defs"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc_filter.pas"/>
+        <UnitName Value="h265_hevc_filter"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc_mvs.pas"/>
+        <UnitName Value="h265_hevc_mvs"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc_ps.pas"/>
+        <UnitName Value="h265_hevc_ps"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc_refs.pas"/>
+        <UnitName Value="h265_hevc_refs"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevc_sei.pas"/>
+        <UnitName Value="h265_hevc_sei"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevcdsp.pas"/>
+        <UnitName Value="h265_hevcdsp"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevcdsp_enc.pas"/>
+        <UnitName Value="h265_hevcdsp_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevcmc.pas"/>
+        <UnitName Value="h265_hevcmc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_hevcpred.pas"/>
+        <UnitName Value="h265_hevcpred"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_output.pas"/>
+        <UnitName Value="h265_output"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_ps_enc.pas"/>
+        <UnitName Value="h265_ps_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_putbits.pas"/>
+        <UnitName Value="h265_putbits"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_sao_enc.pas"/>
+        <UnitName Value="h265_sao_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_scan.pas"/>
+        <UnitName Value="h265_scan"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_slice_enc.pas"/>
+        <UnitName Value="h265_slice_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/h265_syntax_enc.pas"/>
+        <UnitName Value="h265_syntax_enc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/HeicImageX.pas"/>
+        <UnitName Value="HeicImageX"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.Container.pas"/>
+        <UnitName Value="Heif.Container"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.Decode.pas"/>
+        <UnitName Value="Heif.Decode"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.Encode.pas"/>
+        <UnitName Value="Heif.Encode"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.H265.Cabac.pas"/>
+        <UnitName Value="Heif.H265.Cabac"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.H265.Emit.pas"/>
+        <UnitName Value="Heif.H265.Emit"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.H265.Params.pas"/>
+        <UnitName Value="Heif.H265.Params"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.Hevc.pas"/>
+        <UnitName Value="Heif.Hevc"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.Reader.pas"/>
+        <UnitName Value="Heif.Reader"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/Heif.Writer.pas"/>
+        <UnitName Value="Heif.Writer"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/residual_enc.inc"/>
+        <Type Value="Include"/>
+      </Item>
+      <Item>
+        <Filename Value="heic/scan_tables.inc"/>
         <Type Value="Include"/>
       </Item>
     </Files>

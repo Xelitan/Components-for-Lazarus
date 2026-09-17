@@ -29,7 +29,16 @@ uses
   bpg_ps_enc, bpg_putbits, bpg_sao_enc, bpg_scan, bpg_slice_enc, 
   bpg_syntax_enc, BPGImageX, flif_chance, flif_colorrange, flif_common, 
   flif_crc32, flif_dec, flif_enc, flif_image, flif_io, flif_maniac, flif_rac, 
-  flif_symbol, flif_transform, flif_types, FLIFImageX;
+  flif_symbol, flif_transform, flif_types, FLIFImageX, Av1.Bits, Av1.Cdf, 
+  Av1.Decoder, Av1.Frame, Av1.Ipred, Av1.Itx, Av1.LoopFilter, Av1.Msac, 
+  Av1.Obu, Av1.Recon, h265_bits, h265_cabac, h265_cabac_enc, h265_common, 
+  h265_container, h265_enc, h265_enc_rd, h265_enc_trial, h265_frame, 
+  h265_hevc, h265_hevc_cabac, h265_hevc_defs, h265_hevc_filter, h265_hevc_mvs, 
+  h265_hevc_ps, h265_hevc_refs, h265_hevc_sei, h265_hevcdsp, h265_hevcdsp_enc, 
+  h265_hevcmc, h265_hevcpred, h265_output, h265_ps_enc, h265_putbits, 
+  h265_sao_enc, h265_scan, h265_slice_enc, h265_syntax_enc, HeicImageX, 
+  Heif.Container, Heif.Decode, Heif.Encode, Heif.H265.Cabac, Heif.H265.Emit, 
+  Heif.H265.Params, Heif.Hevc, Heif.Reader, Heif.Writer;
 
 implementation
 
