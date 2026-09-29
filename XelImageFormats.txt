@@ -1,0 +1,2 @@
+The package moved here:
+https://github.com/Xelitan/XelImageFormats---50-image-formats-for-TPicture-webp-jp2-heif-avif-heic-psd...-
