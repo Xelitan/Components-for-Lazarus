@@ -21,7 +21,8 @@ interface
 
 uses
   SysUtils, Classes, Math,
-  jxl_types, jxl_bits, jxl_header, jxl_frame, jxl_container, jxl_color;
+  jxl_types, jxl_bits, jxl_header, jxl_frame, jxl_container, jxl_color,
+  jxl_icc, jxl_features;
 
 type
   TJxlDecoder = class
@@ -29,9 +30,10 @@ type
     FMetadata:  TJxlImageMetadata;
     FImage:     TJxlImageF;
     FDecoded:   Boolean;
+    FAlphaIdx:  Integer;    // index into FImage.ExtraPlanes, -1 = none
 
     procedure DecodeCodestream(data: PByte; size: NativeUInt);
-    procedure ReadICCProfile(br: TBitReader; var md: TJxlImageMetadata);
+    procedure SetOutput(const planes: TPlaneArray);
 
   public
     constructor Create;
@@ -69,6 +71,7 @@ constructor TJxlDecoder.Create;
 begin
   inherited;
   FDecoded := False;
+  FAlphaIdx := -1;
   FillChar(FMetadata, SizeOf(FMetadata), 0);
   FillChar(FImage,    SizeOf(FImage),    0);
 end;
@@ -82,37 +85,73 @@ begin
 end;
 
 // ---------------------------------------------------------------------------
-// Read ICC profile data (Brotli-compressed in the codestream)
+// Output: the displayed frame, with the image orientation undone
 // ---------------------------------------------------------------------------
-procedure TJxlDecoder.ReadICCProfile(br: TBitReader;
-                                      var md: TJxlImageMetadata);
+procedure OrientPlane(var p: TFloat32Plane; orientation: Integer);
 var
-  enc: Integer;
-  predictedSize: UInt64;
-  i: Integer;
-  byteCount: Int64;
-  rawBytes: array of Byte;
+  o: TFloat32Plane;
+  x, y, w, h, sx, sy: Integer;
 begin
-  enc           := br.ReadBits(2);
-  predictedSize := br.ReadU64;
+  if orientation <= 1 then Exit;
+  w := p.Width; h := p.Height;
+  if orientation >= 5 then InitFloat32Plane(o, h, w)
+  else InitFloat32Plane(o, w, h);
+  for y := 0 to o.Height - 1 do
+    for x := 0 to o.Width - 1 do
+    begin
+      case orientation of
+        2: begin sx := w - 1 - x; sy := y; end;
+        3: begin sx := w - 1 - x; sy := h - 1 - y; end;
+        4: begin sx := x; sy := h - 1 - y; end;
+        5: begin sx := y; sy := x; end;
+        6: begin sx := y; sy := h - 1 - x; end;
+        7: begin sx := w - 1 - y; sy := h - 1 - x; end;
+      else begin sx := w - 1 - y; sy := x; end;   // 8
+      end;
+      o.Data[y * o.Width + x] := p.Data[sy * p.Stride + sx];
+    end;
+  p := o;
+end;
 
-  byteCount := Int64(predictedSize);
-  if byteCount > 4 * 1024 * 1024 then byteCount := 4 * 1024 * 1024;
-  SetLength(rawBytes, byteCount);
-  for i := 0 to byteCount - 1 do
-    rawBytes[i] := br.ReadBits(8);
-  md.ICCProfile := rawBytes;
+procedure TJxlDecoder.SetOutput(const planes: TPlaneArray);
+var
+  c, n: Integer;
+begin
+  FImage.NumChannels := 3;
+  for c := 0 to 2 do
+  begin
+    FImage.Planes[c] := planes[c];
+    OrientPlane(FImage.Planes[c], FMetadata.Orientation);
+  end;
+  n := Length(planes) - 3;
+  SetLength(FImage.ExtraPlanes, n);
+  FAlphaIdx := -1;
+  for c := 0 to n - 1 do
+  begin
+    FImage.ExtraPlanes[c] := planes[3 + c];
+    OrientPlane(FImage.ExtraPlanes[c], FMetadata.Orientation);
+    if (FAlphaIdx < 0) and (FMetadata.ExtraChannels[c].ChanType = jectAlpha) then
+      FAlphaIdx := c;
+  end;
+  FImage.Width := FImage.Planes[0].Width;
+  FImage.Height := FImage.Planes[0].Height;
 end;
 
 // ---------------------------------------------------------------------------
-// Main codestream decoder
+// Main codestream decoder: headers, ICC, preview, frames until the first
+// displayed one.
 // ---------------------------------------------------------------------------
 procedure TJxlDecoder.DecodeCodestream(data: PByte; size: NativeUInt);
 var
   br:        TBitReader;
   sig1, sig2:Byte;
-  frameDec:  TFrameDecoder;
+  st:        TJxlDecodeState;
+  pos:       NativeUInt;
+  hdr:       TFrameHeader;
+  displayed: Boolean;
+  output:    TPlaneArray;
 begin
+  st := nil;
   br := TBitReader.Create(data, size);
   try
     // Codestream signature
@@ -122,36 +161,33 @@ begin
       raise EJxlError.CreateFmt(
         'Invalid JXL codestream signature: $%02X $%02X', [sig1, sig2]);
 
-    // SizeHeader
     ReadSizeHeader(br, FMetadata);
     if (FMetadata.XSize = 0) or (FMetadata.YSize = 0) or
        (FMetadata.XSize > JXL_MAX_SIZE) or (FMetadata.YSize > JXL_MAX_SIZE) then
       raise EJxlError.CreateFmt(
         'Invalid JXL image dimensions: %dx%d',
         [FMetadata.XSize, FMetadata.YSize]);
-
-    // ImageMetadata
     ReadImageMetadata(br, FMetadata);
-
-
-    // If ICC is embedded, read it
-    if FMetadata.ColorEncoding.WantICC or FMetadata.ColorEncoding.HasICC then
-      ReadICCProfile(br, FMetadata);
-
-    // Align to byte before frame data
+    ReadCustomTransformData(br, FMetadata);
+    if FMetadata.ColorEncoding.WantICC then
+      FMetadata.ICCProfile := ReadEncodedICC(br);
     br.AlignToByte;
+    pos := br.BitsRead div 8;
+    if pos > size then raise EJxlError.Create('Truncated JPEG XL header');
 
-    // For static images there is exactly one frame.
-    // (Animation frames would need a loop here, but we don't support animation.)
-    frameDec := TFrameDecoder.Create(FMetadata);
-    try
-      frameDec.Decode(br, FImage);
-    finally
-      frameDec.Free;
-    end;
-
+    st := TJxlDecodeState.Create(FMetadata);
+    if FMetadata.HavePreview then
+      pos := DecodeJxlFrame(st, data, size, pos, True, True, hdr, displayed, output);
+    repeat
+      if pos >= size then raise EJxlError.Create('JPEG XL: no displayed frame');
+      pos := DecodeJxlFrame(st, data, size, pos, False, False, hdr, displayed, output);
+      if displayed then Break;
+      if hdr.IsLast then raise EJxlError.Create('JPEG XL: no displayed frame');
+    until False;
+    SetOutput(output);
     FDecoded := True;
   finally
+    st.Free;
     br.Free;
   end;
 end;
@@ -212,9 +248,9 @@ begin
   Result := nil;
   if not FDecoded then raise EJxlError.Create('Image not decoded yet');
   SetLength(Result, FImage.Width * FImage.Height * 4);
-  hasAlpha := Length(FImage.ExtraPlanes) > 0;
+  hasAlpha := FAlphaIdx >= 0;
   if hasAlpha then
-    alphaPlane := @FImage.ExtraPlanes[0]
+    alphaPlane := @FImage.ExtraPlanes[FAlphaIdx]
   else
     alphaPlane := nil;
 
@@ -299,7 +335,7 @@ begin
   Result := nil;
   if not FDecoded then raise EJxlError.Create('Image not decoded yet');
   SetLength(Result, FImage.Width * FImage.Height * 8);
-  hasAlpha := Length(FImage.ExtraPlanes) > 0;
+  hasAlpha := FAlphaIdx >= 0;
   for y := 0 to FImage.Height - 1 do
     for x := 0 to FImage.Width - 1 do begin
       idx := (y * FImage.Width + x) * 8;
@@ -312,7 +348,7 @@ begin
         g := r; b := r;
       end;
       if hasAlpha then
-        a := PlaneAt(FImage.ExtraPlanes[0], x, y)
+        a := PlaneAt(FImage.ExtraPlanes[FAlphaIdx], x, y)
       else
         a := 1.0;
       rw := FloatToWord(r);

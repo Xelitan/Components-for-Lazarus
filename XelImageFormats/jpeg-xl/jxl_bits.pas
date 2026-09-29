@@ -58,6 +58,9 @@ type
     // Total bits consumed so far
     function BitsRead: UInt64;
 
+    // True when more bits were consumed than the source holds.
+    function OverRead: Boolean;
+
     // Bytes remaining in source (approximate)
     function BytesLeft: Int64;
 
@@ -81,10 +84,12 @@ end;
 
 procedure TBitReader.Refill;
 begin
-  // Fill up to 64 bits from source bytes
-  while (FBitsInBuf <= 56) and (FPos < FSize) do
+  // Fill up to 64 bits from source bytes; past the end the stream reads as
+  // zeros (as libjxl's BitReader does).
+  while FBitsInBuf <= 56 do
   begin
-    FBuf := FBuf or (UInt64(FData[FPos]) shl FBitsInBuf);
+    if FPos < FSize then
+      FBuf := FBuf or (UInt64(FData[FPos]) shl FBitsInBuf);
     Inc(FPos);
     Inc(FBitsInBuf, 8);
   end;
@@ -224,17 +229,17 @@ begin
     Dec(n);
   end;
   // Skip the rest directly in the source array
-  if n > 0 then begin
-    if n > FSize - FPos then
-      FPos := FSize
-    else
-      Inc(FPos, n);
-  end;
+  if n > 0 then Inc(FPos, n);
 end;
 
 function TBitReader.BitsRead: UInt64;
 begin
   Result := UInt64(FPos) * 8 - FBitsInBuf;
+end;
+
+function TBitReader.OverRead: Boolean;
+begin
+  Result := BitsRead > UInt64(FSize) * 8;
 end;
 
 function TBitReader.BytesLeft: Int64;

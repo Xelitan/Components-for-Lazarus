@@ -120,6 +120,20 @@ type
     LinearBelow:       Single;
     ExtraChannels:     array of TJxlExtraChannelInfo;
     ICCProfile:        array of Byte;
+    // preview and animation headers
+    HavePreview:       Boolean;
+    PreviewXSize, PreviewYSize: Cardinal;
+    HaveAnimation:     Boolean;
+    TpsNumerator, TpsDenominator, NumLoops: Cardinal;
+    HaveTimecodes:     Boolean;
+    // CustomTransformData (image_metadata.h): opsin inverse matrix and
+    // biases, quantization biases and the upsampling kernel weights
+    OpsinInverse:      array[0..8] of Single;   // row-major 3x3
+    OpsinBias:         array[0..2] of Single;   // negative biases, as libjxl
+    QuantBias:         array[0..3] of Single;
+    Ups2Weights:       array[0..14] of Single;
+    Ups4Weights:       array[0..54] of Single;
+    Ups8Weights:       array[0..209] of Single;
   end;
 
   TJxlBlendMode = (

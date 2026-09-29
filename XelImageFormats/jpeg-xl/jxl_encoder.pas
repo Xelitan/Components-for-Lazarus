@@ -603,6 +603,7 @@ begin
     bw.WriteBits(2, 2); bw.WriteBits(11, 4); // transfer kSRGB=13 (enum sel2: 2+11)
     bw.WriteBits(0, 2);                      // rendering_intent kPerceptual (enum sel0=Val0)
     bw.WriteU64Zero;                         // metadata extensions
+    bw.WriteBit(True);                       // CustomTransformData all_default
     bw.AlignByte;
     // FrameHeader
     bw.WriteBit(False);                      // all_default

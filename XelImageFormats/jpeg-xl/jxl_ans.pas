@@ -71,6 +71,10 @@ type
     HuffFast:         array[0..HUFF_FAST_SIZE-1] of THuffEntry;
     HuffSlow:         array of THuffEntry;
     HuffMaxBits:      Integer;
+    // canonical code, for codes longer than HUFF_FAST_BITS: the number of
+    // codes of each length and the symbols sorted by (length, symbol)
+    HuffCount:        array[0..PREFIX_MAX_BITS] of Word;
+    HuffSorted:       array of Word;
     // HybridUint config (shared between ANS and prefix paths)
     UintCfg:          THybridUintConfig;
   end;
@@ -133,6 +137,10 @@ type
     function DecodeStandaloneContextMap(br: TBitReader; nCtx: Integer;
                                         out numHist: Integer): TBytes;
 
+    // Pads the context map with zeros to n entries (libjxl resizes the AC
+    // context maps by kZeroDensityContextLimit - kZeroDensityContextCount).
+    procedure ExtendContextMap(n: Integer);
+
     // Decode one integer from the given context
     function  Decode(ctx: Integer; br: TBitReader): Cardinal;
 
@@ -174,9 +182,11 @@ const
 // ---------------------------------------------------------------------------
 
 function FloorLog2(n: Cardinal): Integer; inline;
+var v: Cardinal;
 begin
   Result := 0;
-  while n > 1 do begin Inc(Result); n := n shr 1; end;
+  v := n;
+  while v > 1 do begin Inc(Result); v := v shr 1; end;
 end;
 
 function CeilLog2NonZero(n: Integer): Integer; inline;
@@ -272,9 +282,13 @@ begin
     finally
       sub.Free;
     end;
-    nHist := maxVal + 1;
     if useMtf then
       IMTFTransform(@FContextMap[0], nCtx);
+    // VerifyContextMap: the count follows the final (post-MTF) values
+    maxVal := 0;
+    for i := 0 to nCtx - 1 do
+      if FContextMap[i] > maxVal then maxVal := FContextMap[i];
+    nHist := maxVal + 1;
   end;
 end;
 
@@ -662,81 +676,116 @@ end;
 // ---------------------------------------------------------------------------
 // Huffman tree reading and decode
 // ---------------------------------------------------------------------------
+// Canonical prefix code from code lengths (dec_huffman.cc BuildHuffmanTable).
+// Codes are read LSB-first with the code's MSB first, as in Brotli. A code
+// with a single used symbol takes no bits.
 procedure TANSDecoder.BuildHuffFromLengths(var h: THistogram;
                                             const lens: array of Integer; n: Integer);
 var
-  i, sym, code, len, maxBits: Integer;
+  i, sym, code, len, maxBits, used, lastSym: Integer;
   bl_count: array[0..PREFIX_MAX_BITS] of Integer;
   next_code: array[0..PREFIX_MAX_BITS] of Integer;
-  codes: array of Integer;
+  offs: array[0..PREFIX_MAX_BITS + 1] of Integer;
   rev_code, j: Integer;
 begin
-  // Count bit-lengths
-  maxBits := 0;
-  FillChar(bl_count, SizeOf(bl_count), 0);
-  for i := 0 to n - 1 do
-    if lens[i] > 0 then begin
-      Inc(bl_count[lens[i]]);
-      if lens[i] > maxBits then maxBits := lens[i];
-    end;
-  h.HuffMaxBits := maxBits;
-
-  // Compute starting codes
-  code := 0; bl_count[0] := 0;
-  for i := 1 to maxBits do begin
-    code := (code + bl_count[i-1]) shl 1;
-    next_code[i] := code;
-  end;
-
-  SetLength(codes, n);
-  for sym := 0 to n - 1 do begin
-    len := lens[sym];
-    if len > 0 then begin
-      codes[sym] := next_code[len];
-      Inc(next_code[len]);
-    end else
-      codes[sym] := 0;
-  end;
-
-  // Fill fast table (codes <= HUFF_FAST_BITS)
   for i := 0 to HUFF_FAST_SIZE - 1 do begin
     h.HuffFast[i].Bits  := 0;
     h.HuffFast[i].Value := 0;
   end;
   SetLength(h.HuffSlow, 0);
+  FillChar(h.HuffCount, SizeOf(h.HuffCount), 0);
+  SetLength(h.HuffSorted, 0);
 
+  maxBits := 0; used := 0; lastSym := 0;
+  FillChar(bl_count, SizeOf(bl_count), 0);
+  for i := 0 to n - 1 do
+    if (lens[i] > 0) and (lens[i] <= PREFIX_MAX_BITS) then begin
+      Inc(bl_count[lens[i]]);
+      if lens[i] > maxBits then maxBits := lens[i];
+      Inc(used); lastSym := i;
+    end;
+  h.HuffMaxBits := maxBits;
+  if used <= 1 then begin
+    h.DegenerateSymbol := lastSym;   // 0 bits (also the empty code)
+    Exit;
+  end;
+  h.DegenerateSymbol := -1;
+
+  // symbols sorted by (length, symbol)
+  for i := 1 to PREFIX_MAX_BITS do h.HuffCount[i] := bl_count[i];
+  SetLength(h.HuffSorted, used);
+  offs[1] := 0;
+  for i := 1 to PREFIX_MAX_BITS do offs[i + 1] := offs[i] + bl_count[i];
+  for sym := 0 to n - 1 do
+    if (lens[sym] > 0) and (lens[sym] <= PREFIX_MAX_BITS) then begin
+      h.HuffSorted[offs[lens[sym]]] := Word(sym);
+      Inc(offs[lens[sym]]);
+    end;
+
+  // starting codes; the fast table for codes of up to HUFF_FAST_BITS bits
+  code := 0; bl_count[0] := 0;
+  for i := 1 to maxBits do begin
+    code := (code + bl_count[i-1]) shl 1;
+    next_code[i] := code;
+  end;
   for sym := 0 to n - 1 do begin
     len := lens[sym];
     if (len <= 0) or (len > PREFIX_MAX_BITS) then Continue;
-    // Reverse the code bits
+    code := next_code[len];
+    Inc(next_code[len]);
+    if len > HUFF_FAST_BITS then Continue;
     rev_code := 0;
-    code := codes[sym];
     for j := 0 to len - 1 do begin
       rev_code := (rev_code shl 1) or (code and 1);
       code := code shr 1;
     end;
-    if len <= HUFF_FAST_BITS then begin
-      // Replicate into all fast table entries that share this prefix
-      j := rev_code;
-      while j < HUFF_FAST_SIZE do begin
-        if h.HuffFast[j].Bits = 0 then begin
-          h.HuffFast[j].Bits  := Byte(len);
-          h.HuffFast[j].Value := Word(sym);
-        end;
-        Inc(j, 1 shl len);
-      end;
+    j := rev_code;
+    while j < HUFF_FAST_SIZE do begin
+      h.HuffFast[j].Bits  := Byte(len);
+      h.HuffFast[j].Value := Word(sym);
+      Inc(j, 1 shl len);
     end;
-    // Long codes: we store them in HuffSlow (simplified: just skip for now)
   end;
 end;
 
+// One symbol from a prefix code: the fast table, else bit by bit.
+function HuffDecodeWith(const h: THistogram; br: TBitReader): Cardinal;
+var
+  e: THuffEntry;
+  len, code, first, index, count: Integer;
+begin
+  if h.DegenerateSymbol >= 0 then begin
+    Result := Cardinal(h.DegenerateSymbol);
+    Exit;
+  end;
+  e := h.HuffFast[br.PeekBits(HUFF_FAST_BITS)];
+  if e.Bits > 0 then begin
+    br.SkipBits(e.Bits);
+    Result := e.Value;
+    Exit;
+  end;
+  code := 0; first := 0; index := 0;
+  for len := 1 to PREFIX_MAX_BITS do begin
+    code := code or Integer(br.ReadBits(1));
+    count := h.HuffCount[len];
+    if code - first < count then begin
+      Result := h.HuffSorted[index + code - first];
+      Exit;
+    end;
+    Inc(index, count);
+    first := (first + count) shl 1;
+    code := code shl 1;
+  end;
+  raise EJxlError.Create('ANS: invalid prefix code');
+end;
+
+// dec_huffman.cc HuffmanDecodingData::ReadFromBitStream (Brotli prefix code).
 procedure TANSDecoder.ReadHuffmanTree(hi: Integer; alphabetSize: Integer; br: TBitReader);
 const
   kCLCodes = 18;
   kCLOrder: array[0..17] of Byte =
     (1,2,3,4,0,5,17,6,16,7,8,9,10,11,12,13,14,15);
-  // Static 4-bit Huffman for code-length-codes meta-table (libjxl dec_huffman.cc)
-  // kMetaHuffV[i] = symbol value, kMetaHuffB[i] = bits consumed
+  // Static 4-bit prefix code for the code length code lengths
   kMetaHuffV: array[0..15] of Byte = (0,4,3,2, 0,4,3,1, 0,4,3,2, 0,4,3,5);
   kMetaHuffB: array[0..15] of Byte = (2,2,2,3, 2,2,2,4, 2,2,2,3, 2,2,2,4);
 var
@@ -749,66 +798,51 @@ var
   max_bits: Integer;
   num_symbols: Integer;
   symArr: array[0..3] of Integer;
-  t, new_len: Integer;
+  t: Integer;
   clH: THistogram;
 begin
+  FHistograms[hi].IsPrefix := True;
+  SetLength(fullLens, alphabetSize);
+  FillChar(fullLens[0], alphabetSize * SizeOf(Integer), 0);
+
   simple_code_or_skip := br.ReadBits(2);
   if simple_code_or_skip = 1 then begin
-    // Simple Huffman (ReadSimpleCode equivalent)
+    // ReadSimpleCode: 1..4 symbols (5 = the 1,2,3,3 shape)
     if alphabetSize <= 1 then max_bits := 0
     else max_bits := FloorLog2(alphabetSize - 1) + 1;
-
-    num_symbols := br.ReadBits(2) + 1;  // 1..4
+    num_symbols := br.ReadBits(2) + 1;
     FillChar(symArr, SizeOf(symArr), 0);
     for i := 0 to num_symbols - 1 do begin
       sym := br.ReadBits(max_bits);
-      if sym >= alphabetSize then sym := 0;
+      if sym >= alphabetSize then
+        raise EJxlError.Create('ANS: invalid simple prefix code');
       symArr[i] := sym;
     end;
     if (num_symbols = 4) and br.ReadBit then
-      Inc(num_symbols);  // 5 symbols
-
-    SetLength(fullLens, alphabetSize);
-    FillChar(fullLens[0], alphabetSize * SizeOf(Integer), 0);
-
-    // Assign code lengths for simple codes
+      Inc(num_symbols);
     case num_symbols of
-      1: ;  // only symbol, length 0 → direct decode (all zeros = single symbol)
+      1: fullLens[symArr[0]] := 1;   // single symbol: built as a 0-bit code
       2: begin
-           // Sort
-           if symArr[0] > symArr[1] then begin t:=symArr[0]; symArr[0]:=symArr[1]; symArr[1]:=t; end;
            fullLens[symArr[0]] := 1; fullLens[symArr[1]] := 1;
          end;
       3: begin
-           if symArr[1] > symArr[2] then begin t:=symArr[1]; symArr[1]:=symArr[2]; symArr[2]:=t; end;
            fullLens[symArr[0]] := 1; fullLens[symArr[1]] := 2; fullLens[symArr[2]] := 2;
          end;
-      4: begin
-           // Sort all 4
-           for i := 0 to 2 do
-             for j := i+1 to 3 do
-               if symArr[i] > symArr[j] then begin t:=symArr[i]; symArr[i]:=symArr[j]; symArr[j]:=t; end;
-           fullLens[symArr[0]] := 2; fullLens[symArr[1]] := 2;
-           fullLens[symArr[2]] := 2; fullLens[symArr[3]] := 2;
-         end;
+      4: for i := 0 to 3 do fullLens[symArr[i]] := 2;
       5: begin
-           // symArr[2],symArr[3] sorted
-           if symArr[2] > symArr[3] then begin t:=symArr[2]; symArr[2]:=symArr[3]; symArr[3]:=t; end;
            fullLens[symArr[0]] := 1; fullLens[symArr[1]] := 2;
            fullLens[symArr[2]] := 3; fullLens[symArr[3]] := 3;
          end;
     end;
-
-    FHistograms[hi].IsPrefix := True;
     BuildHuffFromLengths(FHistograms[hi], fullLens, alphabetSize);
     Exit;
   end;
 
-  // Complex Huffman: read code-length-codes using static 4-bit meta-table
+  // Complex code: the code length code lengths, in kCLOrder
   FillChar(clLens, SizeOf(clLens), 0);
   space := 32; num_codes := 0;
-  for i := simple_code_or_skip to kCLCodes - 1 do begin
-    if space <= 0 then Break;
+  i := simple_code_or_skip;
+  while (i < kCLCodes) and (space > 0) do begin
     j := br.PeekBits(4);
     br.SkipBits(kMetaHuffB[j]);
     sym := kMetaHuffV[j];
@@ -817,42 +851,33 @@ begin
       Dec(space, 32 shr sym);
       Inc(num_codes);
     end;
+    Inc(i);
   end;
-
-  // Now read actual code lengths using the CLC Huffman table
-  SetLength(fullLens, alphabetSize);
-  FillChar(fullLens[0], alphabetSize * SizeOf(Integer), 0);
-
-  // Build meta-Huffman for code-length codes
+  if (num_codes <> 1) and (space <> 0) then
+    raise EJxlError.Create('ANS: invalid prefix code length code');
   BuildHuffFromLengths(clH, clLens, kCLCodes);
 
+  // ReadHuffmanCodeLengths
   prev_code_len := 8;
   repeat_ := 0;
   repeat_code_len := 0;
   space := 32768;
   sym := 0;
   while (sym < alphabetSize) and (space > 0) do begin
-    j := br.PeekBits(HUFF_FAST_BITS);
-    if clH.HuffFast[j].Bits = 0 then begin
-      // Unknown code → skip 1 bit and continue
-      br.SkipBits(1); Continue;
-    end;
-    br.SkipBits(clH.HuffFast[j].Bits);
-    code_len := clH.HuffFast[j].Value;
-
+    code_len := HuffDecodeWith(clH, br);
     if code_len < 16 then begin
-      repeat_ := 0; repeat_code_len := 0;
+      repeat_ := 0;
       fullLens[sym] := code_len;
+      Inc(sym);
       if code_len <> 0 then begin
         prev_code_len := code_len;
         Dec(space, 32768 shr code_len);
       end;
-      Inc(sym);
     end else begin
       extra := code_len - 14;
-      if code_len = 16 then new_len := prev_code_len else new_len := 0;
-      if repeat_code_len <> new_len then begin
-        repeat_ := 0; repeat_code_len := new_len;
+      if code_len = 16 then t := prev_code_len else t := 0;
+      if repeat_code_len <> t then begin
+        repeat_ := 0; repeat_code_len := t;
       end;
       old_repeat := repeat_;
       if repeat_ > 0 then begin
@@ -862,7 +887,7 @@ begin
       repeat_ := repeat_ + Integer(br.ReadBits(extra)) + 3;
       repeat_delta := repeat_ - old_repeat;
       if sym + repeat_delta > alphabetSize then
-        repeat_delta := alphabetSize - sym;
+        raise EJxlError.Create('ANS: invalid prefix code lengths');
       for i := 0 to repeat_delta - 1 do begin
         fullLens[sym] := repeat_code_len;
         Inc(sym);
@@ -871,31 +896,14 @@ begin
         Dec(space, repeat_delta shl (15 - repeat_code_len));
     end;
   end;
-
-  FHistograms[hi].IsPrefix := True;
+  if space <> 0 then
+    raise EJxlError.Create('ANS: incomplete prefix code');
   BuildHuffFromLengths(FHistograms[hi], fullLens, alphabetSize);
 end;
 
 function TANSDecoder.DecodeHuff(hi: Integer; br: TBitReader): Cardinal;
-var
-  code: Cardinal;
-  e: THuffEntry;
 begin
-  // Single-symbol degenerate
-  if FHistograms[hi].DegenerateSymbol >= 0 then begin
-    Result := FHistograms[hi].DegenerateSymbol;
-    Exit;
-  end;
-  code := br.PeekBits(HUFF_FAST_BITS);
-  e := FHistograms[hi].HuffFast[code];
-  if e.Bits > 0 then begin
-    br.SkipBits(e.Bits);
-    Result := e.Value;
-    Exit;
-  end;
-  // Slow path: scan for a valid code (simplified)
-  Result := 0;
-  br.SkipBits(1);
+  Result := HuffDecodeWith(FHistograms[hi], br);
 end;
 
 // ---------------------------------------------------------------------------
@@ -1038,7 +1046,9 @@ begin
       alphaSizes[i] := DVarLenU16(br) + 1;
     for i := 0 to nHist - 1 do
       if alphaSizes[i] > 1 then
-        ReadHuffmanTree(i, alphaSizes[i], br);
+        ReadHuffmanTree(i, alphaSizes[i], br)
+      else
+        FHistograms[i].DegenerateSymbol := 0;   // 0-bit code
   end else begin
     for i := 0 to nHist - 1 do
       ReadHistogram(i, br);
@@ -1120,8 +1130,8 @@ begin
   end;
 
   // Map context → histogram
-  if FNumContexts > 0 then
-    hi := FContextMap[ctx mod FNumContexts]
+  if (ctx >= 0) and (ctx < Length(FContextMap)) then
+    hi := FContextMap[ctx]
   else
     hi := 0;
   if hi >= FNumHistograms then hi := 0;
@@ -1175,6 +1185,15 @@ begin
 end;
 
 // ---------------------------------------------------------------------------
+procedure TANSDecoder.ExtendContextMap(n: Integer);
+var i, old: Integer;
+begin
+  old := Length(FContextMap);
+  if n <= old then Exit;
+  SetLength(FContextMap, n);
+  for i := old to n - 1 do FContextMap[i] := 0;
+end;
+
 function TANSDecoder.CheckFinalState: Boolean;
 begin
   if FUsePrefixCode then

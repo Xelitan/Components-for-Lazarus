@@ -148,6 +148,29 @@ procedure ModularDecodeImageOpts(br: TBitReader; var img: TModImage;
 procedure ApplyInverseTransformList(var img: TModImage;
                                     const transforms: TModTransformList);
 
+type
+  // GroupHeader (encoding.h): the stream's weighted-predictor parameters and
+  // transforms, kept so the transforms can be undone later.
+  TModGroupHeader = record
+    UseGlobalTree: Boolean;
+    WP: TWPHeader;
+    Transforms: TModTransformList;
+  end;
+
+// ModularGenericDecompress (encoding.cc): reads the group header, applies the
+// transforms' channel layout, decodes the channels (those at index >=
+// NumMetaChannels larger than maxChanSize stop the decode, as in libjxl) and,
+// if undoTransforms, undoes the transforms. hdr returns the header.
+procedure ModularGenericDecompress(br: TBitReader; var img: TModImage;
+                                   const globalTree: TMATree;
+                                   globalAns: TANSDecoder; streamId: Integer;
+                                   undoTransforms: Boolean;
+                                   maxChanSize: Integer;
+                                   out hdr: TModGroupHeader);
+
+// Undo the transforms of a header (last first) with its WP parameters.
+procedure UndoModularTransforms(var img: TModImage; const hdr: TModGroupHeader);
+
 // Decode just an MA tree (its own entropy decoder). Public for the global
 // tree decoded in VarDCT LFGlobal.
 procedure ReadMATree(br: TBitReader; var tree: TMATree);
@@ -173,9 +196,11 @@ begin
 end;
 
 function FloorLog2NZ(x: UInt64): Integer; inline;
+var v: UInt64;
 begin
   Result := 0;
-  while x > 1 do begin x := x shr 1; Inc(Result); end;
+  v := x;
+  while v > 1 do begin v := v shr 1; Inc(Result); end;
 end;
 
 procedure InitModChannel(var c: TModChannel; w, h, hs, vs: Integer);
@@ -371,6 +396,13 @@ end;
 // ---------------------------------------------------------------------------
 // Weighted-predictor header (context_predict.h weighted::Header::VisitFields)
 // ---------------------------------------------------------------------------
+procedure ReadWPHeaderDefault(var hdr: TWPHeader);
+begin
+  hdr.p1C := 16; hdr.p2C := 10; hdr.p3Ca := 7; hdr.p3Cb := 7;
+  hdr.p3Cc := 7; hdr.p3Cd := 0; hdr.p3Ce := 0;
+  hdr.w[0] := $d; hdr.w[1] := $c; hdr.w[2] := $c; hdr.w[3] := $c;
+end;
+
 procedure ReadWPHeader(br: TBitReader; var hdr: TWPHeader);
 var allDefault: Boolean;
 begin
@@ -1033,6 +1065,7 @@ var
   idx: array of Int32;
   pch: ^TModChannel;
   dummyProps: array[0..0] of Int64;
+  bd: Integer;
 begin
   nb := img.Channels[0].Height;
   c0 := t.BeginC + 1;
@@ -1051,6 +1084,18 @@ begin
 
   pred  := t.Predictor;
   useWP := pred = PRED_WEIGHTED;
+  bd := img.BitDepth;
+  if bd > 24 then bd := 24;
+
+  // InvPalette: a one-channel palette without deltas or prediction clamps
+  // the index to the palette
+  if (nb = 1) and (t.NbDeltas = 0) and (pred = PRED_ZERO) then
+    for x := 0 to w * h - 1 do
+    begin
+      if idx[x] < 0 then idx[x] := 0
+      else if idx[x] > img.Channels[0].Width - 1 then
+        idx[x] := img.Channels[0].Width - 1;
+    end;
 
   for c := 0 to nb - 1 do begin
     pch := @img.Channels[c0 + c];
@@ -1058,7 +1103,7 @@ begin
     for y := 0 to h - 1 do
       for x := 0 to w - 1 do begin
         index := idx[y * w + x];
-        pe := GetPaletteValue(img, index, c, t.NbColors, img.BitDepth);
+        pe := GetPaletteValue(img, index, c, img.Channels[0].Width, bd);
         if index < t.NbDeltas then begin
           // delta entry: prediction (no tree) + palette delta
           if x > 0 then left := pch^.Data[y*w + x-1]
@@ -1117,100 +1162,132 @@ begin
     end;
 end;
 
+procedure UndoModularTransforms(var img: TModImage; const hdr: TModGroupHeader);
+var i: Integer;
+begin
+  for i := High(hdr.Transforms) downto 0 do
+    case hdr.Transforms[i].Id of
+      0: if (hdr.Transforms[i].RctType mod 7) = 0 then
+           RCTPermuteOnly(img, hdr.Transforms[i].RctType, hdr.Transforms[i].BeginC)
+         else
+           InverseRCT(img, hdr.Transforms[i].RctType, hdr.Transforms[i].BeginC);
+      1: InvPalette(img, hdr.Transforms[i], hdr.WP);
+      2: InvSqueezeAll(img, hdr.Transforms[i]);
+    end;
+end;
+
+procedure ModularGenericDecompress(br: TBitReader; var img: TModImage;
+                                   const globalTree: TMATree;
+                                   globalAns: TANSDecoder; streamId: Integer;
+                                   undoTransforms: Boolean;
+                                   maxChanSize: Integer;
+                                   out hdr: TModGroupHeader);
+var
+  i, numTransforms, numProps, maxProp, distMul, numLeaves, nDecode,
+    numChans: Integer;
+  ownAns: Boolean;
+  tree: TMATree;
+  ans: TANSDecoder;
+begin
+  hdr.UseGlobalTree := False;
+  SetLength(hdr.Transforms, 0);
+  ReadWPHeaderDefault(hdr.WP);
+  if img.NumChannels = 0 then Exit;   // libjxl: empty image -> nothing to read
+
+  // GroupHeader: use_global_tree, wp_header, transforms.
+  hdr.UseGlobalTree := br.ReadBit;
+  ReadWPHeader(br, hdr.WP);
+  numTransforms := Integer(br.ReadU32(0,0, 1,0, 2,4, 18,8));
+  SetLength(hdr.Transforms, numTransforms);
+  for i := 0 to numTransforms - 1 do
+    ReadTransform(br, hdr.Transforms[i]);
+
+  // MetaApply: reshape the channel list before decoding.
+  for i := 0 to numTransforms - 1 do
+    case hdr.Transforms[i].Id of
+      0: if hdr.Transforms[i].BeginC + 2 >= img.NumChannels then
+           raise EJxlError.Create('Modular: RCT channel range');
+      1: MetaPalette(img, hdr.Transforms[i]);
+      2: MetaSqueeze(img, hdr.Transforms[i]);
+    end;
+
+  // Channels coded here: up to the first non-empty non-meta channel larger
+  // than maxChanSize (libjxl break semantics); empty channels are skipped.
+  nDecode := img.NumChannels;
+  numChans := 0;
+  distMul := 0;
+  for i := 0 to img.NumChannels - 1 do
+  begin
+    if (img.Channels[i].Width = 0) or (img.Channels[i].Height = 0) then Continue;
+    if (i >= img.NumMetaChannels) and
+       ((img.Channels[i].Width > maxChanSize) or
+        (img.Channels[i].Height > maxChanSize)) then
+    begin
+      nDecode := i;
+      Break;
+    end;
+    if img.Channels[i].Width > distMul then distMul := img.Channels[i].Width;
+    Inc(numChans);
+  end;
+
+  if numChans > 0 then
+  begin
+    if hdr.UseGlobalTree then
+    begin
+      if (Length(globalTree) = 0) or (globalAns = nil) then
+        raise EJxlError.Create('Modular: global tree requested but not available');
+      tree   := globalTree;
+      ans    := globalAns;
+      ownAns := False;
+      ans.BeginReader(br, Cardinal(distMul));
+    end
+    else
+    begin
+      ReadMATree(br, tree);
+      numLeaves := (Length(tree) + 1) div 2;
+      if numLeaves < 1 then numLeaves := 1;
+      ans    := TANSDecoder.Create;
+      ownAns := True;
+      ans.Init(br, numLeaves, Cardinal(distMul));
+    end;
+
+    // Property count (FilterTree rounding).
+    maxProp := TreeMaxProp(tree);
+    if maxProp > kNumNonrefProperties then
+      numProps := ((maxProp - kNumNonrefProperties + kExtraPropsPerChannel - 1)
+                   div kExtraPropsPerChannel) * kExtraPropsPerChannel
+                  + kNumNonrefProperties
+    else
+      numProps := kNumNonrefProperties;
+
+    try
+      for i := 0 to nDecode - 1 do
+        DecodeModularChannel(br, img, i, streamId, tree, ans, hdr.WP, numProps);
+      if not ans.CheckFinalState then
+        raise EJxlError.Create('Modular: channel ANS final state error');
+    finally
+      if ownAns then ans.Free;
+    end;
+  end;
+
+  if undoTransforms then
+  begin
+    UndoModularTransforms(img, hdr);
+    SetLength(hdr.Transforms, 0);
+  end;
+end;
+
 procedure ModularDecodeImageOpts(br: TBitReader; var img: TModImage;
                                  const globalTree: TMATree;
                                  globalAns: TANSDecoder;
                                  groupId: Integer; undoTransforms: Boolean;
                                  maxChanSize: Integer;
                                  out transformsOut: TModTransformList);
-var
-  i, numTransforms, numProps, maxProp, distMul, numLeaves, nDecode: Integer;
-  useGlobalTree, ownAns: Boolean;
-  wpHdr: TWPHeader;
-  transforms: TModTransformList;
-  tree: TMATree;
-  ans: TANSDecoder;
+var hdr: TModGroupHeader;
 begin
-  SetLength(transformsOut, 0);
-  if img.NumChannels = 0 then Exit;   // libjxl: empty image -> nothing to read
-
-  // GroupHeader: use_global_tree, wp_header, transforms.
-  useGlobalTree := br.ReadBit;
-  ReadWPHeader(br, wpHdr);
-  numTransforms := Integer(br.ReadU32(0,0, 1,0, 2,4, 18,8));
-  SetLength(transforms, numTransforms);
-  for i := 0 to numTransforms - 1 do
-    ReadTransform(br, transforms[i]);
-  transformsOut := transforms;
-
-  // MetaApply: reshape the channel list before decoding.
-  for i := 0 to numTransforms - 1 do
-    case transforms[i].Id of
-      1: MetaPalette(img, transforms[i]);
-      2: MetaSqueeze(img, transforms[i]);
-    end;
-
-  // Channels to decode here: stop at the first non-meta channel exceeding
-  // maxChanSize (libjxl break semantics); the rest belong to group streams.
-  nDecode := img.NumChannels;
-  for i := 0 to img.NumChannels - 1 do
-    if (i >= img.NumMetaChannels) and
-       ((img.Channels[i].Width > maxChanSize) or
-        (img.Channels[i].Height > maxChanSize)) then begin
-      nDecode := i;
-      Break;
-    end;
-  if nDecode = 0 then Exit;   // nothing coded in this stream
-
-  // distance multiplier = max decoded channel width.
-  distMul := 0;
-  for i := 0 to nDecode - 1 do
-    if img.Channels[i].Width > distMul then distMul := img.Channels[i].Width;
-
-  if useGlobalTree then begin
-    if Length(globalTree) = 0 then
-      raise EJxlError.Create('Modular: global tree requested but not available');
-    tree   := globalTree;       // shares the reference
-    ans    := globalAns;
-    ownAns := False;
-    ans.BeginReader(br, Cardinal(distMul));
-  end else begin
-    ReadMATree(br, tree);
-    numLeaves := (Length(tree) + 1) div 2;
-    if numLeaves < 1 then numLeaves := 1;
-    ans    := TANSDecoder.Create;
-    ownAns := True;
-    ans.Init(br, numLeaves, Cardinal(distMul));
-  end;
-
-  // Property count (FilterTree rounding).
-  maxProp := TreeMaxProp(tree);
-  if maxProp > kNumNonrefProperties then
-    numProps := ((maxProp - kNumNonrefProperties + kExtraPropsPerChannel - 1)
-                 div kExtraPropsPerChannel) * kExtraPropsPerChannel
-                + kNumNonrefProperties
-  else
-    numProps := kNumNonrefProperties;
-
-  try
-    for i := 0 to nDecode - 1 do
-      DecodeModularChannel(br, img, i, groupId, tree, ans, wpHdr, numProps);
-    if not ans.CheckFinalState then
-      raise EJxlError.Create('Modular: channel ANS final state error');
-  finally
-    if ownAns then ans.Free;
-  end;
-
-  if undoTransforms then
-    for i := numTransforms - 1 downto 0 do
-      case transforms[i].Id of
-        0: if (transforms[i].RctType mod 7) = 0 then
-             RCTPermuteOnly(img, transforms[i].RctType, transforms[i].BeginC)
-           else
-             InverseRCT(img, transforms[i].RctType, transforms[i].BeginC);
-        1: InvPalette(img, transforms[i], wpHdr);
-        2: InvSqueezeAll(img, transforms[i]);
-      end;
+  ModularGenericDecompress(br, img, globalTree, globalAns, groupId,
+                           undoTransforms, maxChanSize, hdr);
+  transformsOut := hdr.Transforms;
 end;
 
 procedure ModularDecodeImage(br: TBitReader; var img: TModImage;

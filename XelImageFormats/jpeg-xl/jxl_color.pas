@@ -62,57 +62,42 @@ implementation
 // (Opsin inverse matrix from libjxl)
 // ---------------------------------------------------------------------------
 const
-  // Opsin inverse matrix (from libjxl/enc_color_management.cc)
-  // Maps XYB back to linear sRGB
+  // Default inverse opsin absorbance matrix (libjxl cms/opsin_params.h,
+  // kDefaultInverseOpsinAbsorbanceMatrix): mixed LMS -> linear sRGB.
   kM: array[0..8] of Double = (
-    11.031566901960784, -9.866628423529412,  0.955989360392157,
-    -3.254147380392157,  4.418770392156863, -0.096027450980392,
-    -3.658284392156863,  2.712457058823529,  1.945860784313725
+    11.031566901960783, -9.866943921568629,  -0.16462299647058826,
+    -3.254147380392157,  4.418770392156863,  -0.16462299647058826,
+    -3.6588512862745097, 2.7129230470588235,  1.9459282392156863
   );
-  // Opsin bias constants (subtracted before matrix multiply in encoding,
-  // added back during decoding)
-  kOpsinBias: array[0..2] of Double = (
-    0.00379307325527544933,
-    0.00379307325527544933,
-    0.00379307325527544933
-  );
+  // Opsin absorbance bias (kOpsinAbsorbanceBias0).
+  kOpsinBias = 0.0037930732552754493;
 
+// dec_xyb-inl.h XybToRgb: the encoder stores cbrt(LMS + bias) - cbrt(bias),
+// so LMS = (gamma + cbrt(bias))^3 - bias. No clamping: out-of-gamut values
+// are kept (they may be in gamut in a wider space).
 procedure XYBToLinearSRGB(var X, Y, B: TFloat32Plane);
 var
   i, n: Integer;
-  Lp, Mp, Sp: Double;
+  Lp, Mp, Sp, CbrtBias: Double;
   L, M, S: Double;
 begin
+  CbrtBias := Power(kOpsinBias, 1.0 / 3.0);
   n := X.Width * X.Height;
   for i := 0 to n - 1 do
   begin
-    Lp := X.Data[i] + Y.Data[i];   // L' = X + Y
-    Mp := Y.Data[i] - X.Data[i];   // M' = Y - X
-    Sp := B.Data[i];                // S' = B
-
-    // Add opsin bias then cube (inverse of the cube-root XYB encoding)
-    L := Lp + kOpsinBias[0]; if L < 0 then L := 0;
-    M := Mp + kOpsinBias[1]; if M < 0 then M := 0;
-    S := Sp + kOpsinBias[2]; if S < 0 then S := 0;
-    // Clamp before cubing to prevent overflow on malformed/incorrect input
-    if L > 1e8 then L := 1e8;
-    if M > 1e8 then M := 1e8;
-    if S > 1e8 then S := 1e8;
-    L := L * L * L;
-    M := M * M * M;
-    S := S * S * S;
-
-    // Opsin inverse matrix: LMS -> linear sRGB
-    // Use intermediate Double vars and clamp before narrowing to Single
-    Lp := kM[0]*L + kM[1]*M + kM[2]*S;
-    Mp := kM[3]*L + kM[4]*M + kM[5]*S;
-    Sp := kM[6]*L + kM[7]*M + kM[8]*S;
-    if Lp > 1e30 then Lp := 1e30 else if Lp < -1e30 then Lp := -1e30;
-    if Mp > 1e30 then Mp := 1e30 else if Mp < -1e30 then Mp := -1e30;
-    if Sp > 1e30 then Sp := 1e30 else if Sp < -1e30 then Sp := -1e30;
-    X.Data[i] := Lp;
-    Y.Data[i] := Mp;
-    B.Data[i] := Sp;
+    Lp := Y.Data[i] + X.Data[i] + CbrtBias;
+    Mp := Y.Data[i] - X.Data[i] + CbrtBias;
+    Sp := B.Data[i] + CbrtBias;
+    // guard against overflow on malformed input
+    if Lp > 1e6 then Lp := 1e6 else if Lp < -1e6 then Lp := -1e6;
+    if Mp > 1e6 then Mp := 1e6 else if Mp < -1e6 then Mp := -1e6;
+    if Sp > 1e6 then Sp := 1e6 else if Sp < -1e6 then Sp := -1e6;
+    L := Lp * Lp * Lp - kOpsinBias;
+    M := Mp * Mp * Mp - kOpsinBias;
+    S := Sp * Sp * Sp - kOpsinBias;
+    X.Data[i] := kM[0] * L + kM[1] * M + kM[2] * S;
+    Y.Data[i] := kM[3] * L + kM[4] * M + kM[5] * S;
+    B.Data[i] := kM[6] * L + kM[7] * M + kM[8] * S;
   end;
 end;
 
