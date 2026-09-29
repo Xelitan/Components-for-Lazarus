@@ -890,6 +890,18 @@ begin
                 S^.sps^.bit_depth);
 end;
 
+// The chroma prediction mode that goes with a luma mode when the chroma mode
+// is "derived" (4). In 4:2:2 the chroma block is twice as tall as it is wide,
+// so the format maps the direction through tab_mode_idx (intra_prediction_unit
+// does this on the decoder side); the chroma scan follows the mapped mode.
+function chroma_mode_for(S: PHEVCContext; LumaMode: Integer): Integer;
+begin
+  if S^.sps^.chroma_format_idc = 2 then
+    Result := chroma_mode_422(LumaMode)
+  else
+    Result := LumaMode;
+end;
+
 // Mirrors the scan selection in hls_transform_unit. Note that the condition is
 // on the LUMA transform size for all three components -- the decoder derives
 // scan_idx_c inside the same "log2_trafo_size < 4" test, using the luma size,
@@ -947,7 +959,7 @@ begin
   if S^.sps^.chroma_format_idc = 2 then KCount := 2 else KCount := 1;
   HeightC := SizeC;
 
-  LC^.tu.intra_pred_mode_c := Mode;
+  LC^.tu.intra_pred_mode_c := chroma_mode_for(S, Mode);
   for C := 1 to 2 do
   begin
     QpC := chroma_qp_of(S, Enc.Qp, C);
@@ -975,9 +987,9 @@ begin
       if Nz > 0 then
       begin
         sign_hide_adjust(S, @W2[0], @PreQ2[0], Log2C,
-          scan_for(Mode, Log2Size), QpC);
+          scan_for(LC^.tu.intra_pred_mode_c, Log2Size), QpC);
         Bits := Bits + residual_bits(S, @W2[0], Log2C,
-                                     scan_for(Mode, Log2Size), C);
+                                     scan_for(LC^.tu.intra_pred_mode_c, Log2Size), C);
         dequant_block(@W2[0], Log2C, QpC, S^.sps^.bit_depth);
         idct(Log2C - 2, @W2[0], SizeC, S^.sps^.bit_depth);
       end
@@ -1364,10 +1376,10 @@ begin
           // with -- a least-squares fit says how well luma predicts chroma, not
           // whether coding the scale pays for itself
           nzProbe := encode_tb(Enc, X0, YC, Log2C, C, @Probe[0],
-            scan_for(Mode, Log2TrafoSize), tsProbe);
+            scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), tsProbe);
           if nzProbe > 0 then
             BitsPlain := residual_bits(S, @Probe[0], Log2C,
-                                       scan_for(Mode, Log2TrafoSize), C)
+                                       scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), C)
           else
             BitsPlain := 0;
 
@@ -1378,10 +1390,10 @@ begin
             CcpPred := @LumaRes[0];
             CcpScaleCur := CcpScale[C - 1];
             nzTry := encode_tb(Enc, X0, YC, Log2C, C, @Try_[0],
-              scan_for(Mode, Log2TrafoSize), tsProbe);
+              scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), tsProbe);
             if nzTry > 0 then
               BitsCcp := residual_bits(S, @Try_[0], Log2C,
-                                       scan_for(Mode, Log2TrafoSize), C)
+                                       scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), C)
             else
               BitsCcp := 0;
             // the scale itself costs a few bins; charge it and only keep the
@@ -1394,7 +1406,7 @@ begin
         if C = 1 then
         begin
           nzCb[K] := encode_tb(Enc, X0, YC, Log2C, 1, @CoefCb[K * 32 * 32],
-            scan_for(Mode, Log2TrafoSize), tsCb[K]);
+            scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), tsCb[K]);
           if (nzCb[K] > 0) or (CcpScaleCur <> 0) then
           begin
             Move(CoefCb[K * 32 * 32], Scratch[0], (1 shl (2 * Log2C)) * SizeOf(Int16));
@@ -1406,7 +1418,7 @@ begin
         else
         begin
           nzCr[K] := encode_tb(Enc, X0, YC, Log2C, 2, @CoefCr[K * 32 * 32],
-            scan_for(Mode, Log2TrafoSize), tsCr[K]);
+            scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), tsCr[K]);
           if (nzCr[K] > 0) or (CcpScaleCur <> 0) then
           begin
             Move(CoefCr[K * 32 * 32], Scratch[0], (1 shl (2 * Log2C)) * SizeOf(Int16));
@@ -1436,12 +1448,12 @@ begin
   for K := 0 to CbCount - 1 do
     if nzCb[K] > 0 then
       ff_hevc_hls_residual_coding_enc(S, Enc.E, @CoefCb[K * 32 * 32], Log2C,
-        scan_for(Mode, Log2TrafoSize), 1, tsCb[K]);
+        scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), 1, tsCb[K]);
   if UseCcp then enc_cross_comp_pred(S, Enc.E, 1, CcpScale[1]);
   for K := 0 to CbCount - 1 do
     if nzCr[K] > 0 then
       ff_hevc_hls_residual_coding_enc(S, Enc.E, @CoefCr[K * 32 * 32], Log2C,
-        scan_for(Mode, Log2TrafoSize), 2, tsCr[K]);
+        scan_for(LC^.tu.intra_pred_mode_c, Log2TrafoSize), 2, tsCr[K]);
 end;
 
 // The one transform-tree shape the format builds differently: an 8x8 luma node
@@ -1485,14 +1497,14 @@ begin
     begin
       YC := Y0 + (K shl 2);
       nzCb[K] := encode_tb(Enc, X0, YC, 2, 1, @CoefCb[K * 32 * 32],
-        scan_for(Mode, 2), tsCb[K]);
+        scan_for(LC^.tu.intra_pred_mode_c, 2), tsCb[K]);
       if nzCb[K] > 0 then
       begin
         Move(CoefCb[K * 32 * 32], Scratch[0], 16 * SizeOf(Int16));
         reconstruct_tb(Enc, X0, YC, 2, 1, @Scratch[0], tsCb[K]);
       end;
       nzCr[K] := encode_tb(Enc, X0, YC, 2, 2, @CoefCr[K * 32 * 32],
-        scan_for(Mode, 2), tsCr[K]);
+        scan_for(LC^.tu.intra_pred_mode_c, 2), tsCr[K]);
       if nzCr[K] > 0 then
       begin
         Move(CoefCr[K * 32 * 32], Scratch[0], 16 * SizeOf(Int16));
@@ -1531,11 +1543,11 @@ begin
       for K := 0 to CbCount - 1 do
         if nzCb[K] > 0 then
           ff_hevc_hls_residual_coding_enc(S, Enc.E, @CoefCb[K * 32 * 32], 2,
-            scan_for(Mode, 2), 1, tsCb[K]);
+            scan_for(LC^.tu.intra_pred_mode_c, 2), 1, tsCb[K]);
       for K := 0 to CbCount - 1 do
         if nzCr[K] > 0 then
           ff_hevc_hls_residual_coding_enc(S, Enc.E, @CoefCr[K * 32 * 32], 2,
-            scan_for(Mode, 2), 2, tsCr[K]);
+            scan_for(LC^.tu.intra_pred_mode_c, 2), 2, tsCr[K]);
     end;
   end;
 end;
@@ -1690,22 +1702,22 @@ begin
   // chroma, whole, following the first quarter
   if HasChroma then
   begin
-    LC^.pu.intra_pred_mode_c[0] := Byte(Modes[0]);
-    LC^.tu.intra_pred_mode_c := Modes[0];
+    LC^.pu.intra_pred_mode_c[0] := Byte(chroma_mode_for(S, Modes[0]));
+    LC^.tu.intra_pred_mode_c := chroma_mode_for(S, Modes[0]);
     LC^.pu.chroma_mode_c[0] := 4;
     LC^.tu.chroma_mode_c := 4;
     for K := 0 to CbCount - 1 do
     begin
       YC := Y0 + (K shl (Log2CbSize - 1));
       nzCb[K] := encode_tb(Enc, X0, YC, Log2CbSize - 1, 1, @CoefCb[K * 32 * 32],
-        scan_for(Modes[0], Log2CbSize - 1), tsCb[K]);
+        scan_for(LC^.tu.intra_pred_mode_c, Log2CbSize - 1), tsCb[K]);
       if nzCb[K] > 0 then
       begin
         Move(CoefCb[K * 32 * 32], Scratch[0], 16 * SizeOf(Int16));
         reconstruct_tb(Enc, X0, YC, Log2CbSize - 1, 1, @Scratch[0], tsCb[K]);
       end;
       nzCr[K] := encode_tb(Enc, X0, YC, Log2CbSize - 1, 2, @CoefCr[K * 32 * 32],
-        scan_for(Modes[0], Log2CbSize - 1), tsCr[K]);
+        scan_for(LC^.tu.intra_pred_mode_c, Log2CbSize - 1), tsCr[K]);
       if nzCr[K] > 0 then
       begin
         Move(CoefCr[K * 32 * 32], Scratch[0], 16 * SizeOf(Int16));
@@ -1745,11 +1757,11 @@ begin
       for K := 0 to CbCount - 1 do
         if nzCb[K] > 0 then
           ff_hevc_hls_residual_coding_enc(S, Enc.E, @CoefCb[K * 32 * 32],
-            Log2CbSize - 1, scan_for(Modes[0], Log2CbSize - 1), 1, tsCb[K]);
+            Log2CbSize - 1, scan_for(LC^.tu.intra_pred_mode_c, Log2CbSize - 1), 1, tsCb[K]);
       for K := 0 to CbCount - 1 do
         if nzCr[K] > 0 then
           ff_hevc_hls_residual_coding_enc(S, Enc.E, @CoefCr[K * 32 * 32],
-            Log2CbSize - 1, scan_for(Modes[0], Log2CbSize - 1), 2, tsCr[K]);
+            Log2CbSize - 1, scan_for(LC^.tu.intra_pred_mode_c, Log2CbSize - 1), 2, tsCr[K]);
     end;
   end;
 end;
@@ -1816,9 +1828,9 @@ begin
     // chroma mode 4 is "derived", i.e. the same as luma
     enc_intra_chroma_pred_mode(S, Enc.E, 4);
     LC^.pu.chroma_mode_c[0] := 4;
-    LC^.pu.intra_pred_mode_c[0] := Byte(Mode);
+    LC^.pu.intra_pred_mode_c[0] := Byte(chroma_mode_for(S, Mode));
     LC^.tu.chroma_mode_c := 4;
-    LC^.tu.intra_pred_mode_c := Mode;
+    LC^.tu.intra_pred_mode_c := chroma_mode_for(S, Mode);
   end;
 
   encode_transform_node(Enc, X0, Y0, Log2CbSize, Log2CbSize, 0, -1);

@@ -61,7 +61,8 @@ var
   Qp: Integer;
   X, Y, Sx, Sy, R, G, B: Integer;
   YV, CbV, CrV: Integer;
-  SumCb, SumCr, Cnt: Integer;
+  SumCb, SumCr: Int64;
+  Cnt, CntLog2: Integer;
   P: THevcParams;
   Vps, Sps, PpsNal, SliceNal, HvcC, ItemData: TBytes;
   SliceLen: Integer;
@@ -85,11 +86,11 @@ begin
   else if AChromaFormat = 2 then begin SubW := 2; SubH := 1; end  // 4:2:2
   else begin SubW := 1; SubH := 1; end;                            // 4:4:4
 
-  // Display dimensions must be a whole number of chroma samples.
-  EncW := AWidth - (AWidth mod SubW);
-  EncH := AHeight - (AHeight mod SubH);
-  if EncW < SubW then EncW := SubW;
-  if EncH < SubH then EncH := SubH;
+  // The coded size must be a whole number of chroma samples: an odd size is
+  // rounded up (the extra column / row repeats the edge pixels) and a 'clap'
+  // (clean aperture) property crops the picture back to AWidth x AHeight.
+  EncW := ((AWidth + SubW - 1) div SubW) * SubW;
+  EncH := ((AHeight + SubH - 1) div SubH) * SubH;
 
   // Coded size padded up to the min coding block size (8).
   PadW := (EncW + 7) and (not 7);
@@ -111,18 +112,23 @@ begin
     CW := PadW div SubW;
     CH := PadH div SubH;
 
-    // Luma plane (full padded resolution, edge-replicated into padding).
+    // BT.601 limited range with the exact coefficients (x 2^16 / 255), the
+    // inverse of what decoders apply for matrix 6, rounded to nearest. The
+    // old 66/129/25 over 256 approximation and truncating division cost
+    // several dB before any coding. Luma: full padded resolution, the padding
+    // edge-replicated.
     for Y := 0 to PadH - 1 do
       for X := 0 to PadW - 1 do
       begin
         R := ARGB[RgbIdx(X, Y) + 0];
         G := ARGB[RgbIdx(X, Y) + 1];
         B := ARGB[RgbIdx(X, Y) + 2];
-        YV := (66 * R + 129 * G + 25 * B + 128) div 256 + 16;
+        YV := 16 + SarInt64(16829 * Int64(R) + 33039 * G + 6416 * B + 32768, 16);
         PlaneSet(Enc.Src, 0, X, Y, Word(Clip(YV, 0, 255)));
       end;
 
-    // Chroma planes: average the RGB over each SubW x SubH luma block.
+    // Chroma planes: the average over each SubW x SubH luma block.
+    CntLog2 := Ord(SubW = 2) + Ord(SubH = 2);
     for Y := 0 to CH - 1 do
       for X := 0 to CW - 1 do
       begin
@@ -133,12 +139,14 @@ begin
             R := ARGB[RgbIdx(X * SubW + Sx, Y * SubH + Sy) + 0];
             G := ARGB[RgbIdx(X * SubW + Sx, Y * SubH + Sy) + 1];
             B := ARGB[RgbIdx(X * SubW + Sx, Y * SubH + Sy) + 2];
-            SumCb := SumCb + (-38 * R - 74 * G + 112 * B);
-            SumCr := SumCr + (112 * R - 94 * G - 18 * B);
+            SumCb := SumCb + (-9714 * Int64(R) - 19070 * G + 28784 * B);
+            SumCr := SumCr + (28784 * Int64(R) - 24103 * G - 4681 * B);
             Inc(Cnt);
           end;
-        CbV := (SumCb div Cnt + 128) div 256 + 128;
-        CrV := (SumCr div Cnt + 128) div 256 + 128;
+        // round(Sum / (Cnt * 2^16)); Cnt is a power of two (1, 2, 4), so
+        // one arithmetic shift rounds negatives correctly too
+        CbV := 128 + SarInt64(SumCb + Cnt * 32768, 16 + CntLog2);
+        CrV := 128 + SarInt64(SumCr + Cnt * 32768, 16 + CntLog2);
         PlaneSet(Enc.Src, 1, X, Y, Word(Clip(CbV, 0, 255)));
         PlaneSet(Enc.Src, 2, X, Y, Word(Clip(CrV, 0, 255)));
       end;
@@ -188,7 +196,8 @@ begin
     Color.Transfer := 13;
     Color.Matrix := 6;
     Color.FullRange := False;
-    Result := BuildHeifFile(HvcC, ItemData, EncW, EncH, Color, AExif, AIcc);
+    Result := BuildHeifFileCropped(HvcC, ItemData, EncW, EncH, AWidth, AHeight,
+      Color, AExif, AIcc);
   finally
     h265_enc_free(Enc);
   end;

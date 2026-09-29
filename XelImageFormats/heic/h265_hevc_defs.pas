@@ -751,6 +751,12 @@ type
     picture_struct: Integer;
     // USE_FRAME_DURATION_SEI
     frame_duration: Word;
+
+    // Scaling lists for the SPS, set by a caller that parsed a standard SPS
+    // (HEIF) before feeding the BPG-style compact SPS, which cannot carry
+    // them. Non-zero ext_sps_scaling: the next SPS enables and uses them.
+    ext_sps_scaling: Integer;
+    ext_sps_scaling_list: TScalingList;
   end;
 
 function IS_IDR(S: PHEVCContext): Boolean; inline;

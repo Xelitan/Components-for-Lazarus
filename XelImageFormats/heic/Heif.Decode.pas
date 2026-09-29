@@ -20,7 +20,7 @@ interface
 
 uses
   SysUtils, Classes, Math, Heif.Reader, Heif.Container, Heif.Hevc, Heif.H265.Params,
-  h265_common, h265_hevc_defs, h265_frame, h265_hevc, Av1.Decoder;
+  h265_common, h265_bits, h265_hevc_defs, h265_hevc_ps, h265_frame, h265_hevc, Av1.Decoder;
 
 type
   EHeifDecode = class(Exception);
@@ -207,6 +207,39 @@ begin
   end;
 end;
 
+// The compact SPS the decoder is fed has no room for scaling lists, so when the
+// real SPS enables them they are set up here (the defaults, or the SPS's own
+// scaling_list_data() parsed by the decoder's routine) and the decoder picks
+// them up with the SPS. Without this, streams using them -- iPhone photos use
+// the defaults -- decode slightly wrong.
+procedure InstallScalingLists(Ctx: PHEVCContext; const ASpsNal: TBytes;
+  const ASps: TSps);
+var
+  Rbsp: TBytes;
+  TmpSps: PHEVCSPS;
+begin
+  set_default_scaling_list_data(@Ctx^.ext_sps_scaling_list);
+  if ASps.ScalingListDataPresent then
+  begin
+    Rbsp := RemoveEmulationPrevention(ASpsNal);
+    SetLength(Rbsp, Length(Rbsp) + FF_INPUT_BUFFER_PADDING_SIZE);
+    init_get_bits(Ctx^.HEVClc^.gb, @Rbsp[0],
+      (Length(Rbsp) - FF_INPUT_BUFFER_PADDING_SIZE) * 8);
+    skip_bits(Ctx^.HEVClc^.gb, ASps.ScalingListBitPos);
+    TmpSps := av_mallocz(SizeOf(THEVCSPS));   // only chroma_format_idc is read
+    if TmpSps = nil then
+      raise EHeifDecode.Create('Out of memory (SPS)');
+    try
+      TmpSps^.chroma_format_idc := ASps.ChromaFormatIdc;
+      if scaling_list_data(Ctx, @Ctx^.ext_sps_scaling_list, TmpSps) < 0 then
+        raise EHeifDecode.Create('Invalid SPS scaling list data');
+    finally
+      av_free(TmpSps);
+    end;
+  end;
+  Ctx^.ext_sps_scaling := 1;
+end;
+
 // Decodes a single 'hvc1' image item to YCbCr.
 function DecodeHvcItem(C: THeifContainer; Item: THeifItem;
   out AImg: THeifImage): Boolean;
@@ -253,6 +286,8 @@ begin
   try
     if hevc_init_context(Ctx) < 0 then
       raise EHeifDecode.Create('hevc_init_context failed');
+    if Sps.ScalingListEnabled then
+      InstallScalingLists(Ctx, Config.Sps[0].Data, Sps);
     Frame := av_frame_alloc;
     if Frame = nil then
       raise EHeifDecode.Create('av_frame_alloc failed');

@@ -59,6 +59,10 @@ type
     MaxTransformHierarchyDepthIntra: Integer;
     ScalingListEnabled: Boolean;
     ScalingList: TScalingList;
+    // sps_scaling_list_data_present_flag, and the bit offset (in the RBSP,
+    // from the NAL header) where scaling_list_data() starts
+    ScalingListDataPresent: Boolean;
+    ScalingListBitPos: Integer;
     AmpEnabled: Boolean;
     SaoEnabled: Boolean;
     PcmEnabled: Boolean;
@@ -391,7 +395,11 @@ begin
     ASps.ScalingListEnabled := BR.ReadBit = 1;
     if ASps.ScalingListEnabled then
       if BR.ReadBit = 1 then // sps_scaling_list_data_present_flag
+      begin
+        ASps.ScalingListDataPresent := True;
+        ASps.ScalingListBitPos := Integer(BR.BitsRead);
         ParseScalingListData(BR, ASps.ScalingList);
+      end;
 
     ASps.AmpEnabled := BR.ReadBit = 1;
     ASps.SaoEnabled := BR.ReadBit = 1;

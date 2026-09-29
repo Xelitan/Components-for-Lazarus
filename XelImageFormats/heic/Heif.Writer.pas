@@ -61,6 +61,13 @@ function BuildHeifFile(const AHvcC, AItemData: TBytes;
   const AExif, AIcc: TBytes): TBytes; overload;
 function BuildHeifFile(const AHvcC, AItemData: TBytes;
   ADisplayW, ADisplayH: Integer; const AColor: TNclxColor): TBytes; overload;
+// As above, with a clean aperture: when ACropW x ACropH is smaller than the
+// coded ADisplayW x ADisplayH (ispe), a 'clap' property crops the image to
+// its top-left ACropW x ACropH. Used for odd sizes with 4:2:0 / 4:2:2 chroma,
+// whose coded size must be even.
+function BuildHeifFileCropped(const AHvcC, AItemData: TBytes;
+  ADisplayW, ADisplayH, ACropW, ACropH: Integer; const AColor: TNclxColor;
+  const AExif, AIcc: TBytes): TBytes;
 
 implementation
 
@@ -158,8 +165,8 @@ begin
     Move(FBuf[0], Result[0], FLen);
 end;
 
-function BuildHeifFile(const AHvcC, AItemData: TBytes;
-  ADisplayW, ADisplayH: Integer; const AColor: TNclxColor;
+function BuildHeifFileCropped(const AHvcC, AItemData: TBytes;
+  ADisplayW, ADisplayH, ACropW, ACropH: Integer; const AColor: TNclxColor;
   const AExif, AIcc: TBytes): TBytes;
 const
   IMG_ID = 1;
@@ -174,11 +181,16 @@ var
   itemCount: Integer;
   ExifItemData: TBytes;
   I: Integer;
+  hasClap: Boolean;
 begin
   hasExif := Length(AExif) > 0;
   hasIcc := Length(AIcc) > 0;
+  if (ACropW <= 0) or (ACropW > ADisplayW) then ACropW := ADisplayW;
+  if (ACropH <= 0) or (ACropH > ADisplayH) then ACropH := ADisplayH;
+  hasClap := (ACropW < ADisplayW) or (ACropH < ADisplayH);
   nProps := 3;                    // hvcC, ispe, colr(nclx)
   if hasIcc then Inc(nProps);     // + colr(prof)
+  if hasClap then Inc(nProps);    // + clap (transformative, listed last)
   itemCount := 1;
   if hasExif then Inc(itemCount);
 
@@ -211,12 +223,12 @@ begin
     // iinf -> infe entries
     iinf := W.BeginFullBox('iinf', 0, 0);
     W.U16(itemCount);
-    infe := W.BeginFullBox('infe', 2, 1);
+    infe := W.BeginFullBox('infe', 2, 0);  // flags 0: a visible image item
     W.U16(IMG_ID); W.U16(0); W.FourCC('hvc1'); W.U8(0);
     W.EndBox(infe);
     if hasExif then
     begin
-      infe := W.BeginFullBox('infe', 2, 0); // flags=0 -> hidden metadata item
+      infe := W.BeginFullBox('infe', 2, 1); // flags 1: hidden (metadata item)
       W.U16(EXIF_ID); W.U16(0); W.FourCC('Exif'); W.U8(0);
       W.EndBox(infe);
     end;
@@ -253,6 +265,18 @@ begin
       W.Bytes(AIcc);
       W.EndBox(b);
     end;
+    if hasClap then
+    begin
+      // Clean aperture, ISO/IEC 14496-12: the aperture is centred on the
+      // image and shifted by (horizOff, vertOff); a top-left crop of a
+      // W x H image to CW x CH has offset ((CW - W) / 2, (CH - H) / 2).
+      b := W.BeginBox('clap');
+      W.U32(LongWord(ACropW)); W.U32(1);                       // cleanApertureWidth
+      W.U32(LongWord(ACropH)); W.U32(1);                       // cleanApertureHeight
+      W.U32(LongWord(ACropW - ADisplayW)); W.U32(2);           // horizOff (signed)
+      W.U32(LongWord(ACropH - ADisplayH)); W.U32(2);           // vertOff (signed)
+      W.EndBox(b);
+    end;
     W.EndBox(ipco);
 
     ipma := W.BeginFullBox('ipma', 0, 0);
@@ -262,7 +286,10 @@ begin
     W.U8(assocCount);
     W.U8($81);                    // hvcC essential, index 1
     for I := 2 to nProps do
-      W.U8(Byte(I));              // ispe, colr(s) non-essential
+      if hasClap and (I = nProps) then
+        W.U8($80 or Byte(I))      // clap: transformative, essential
+      else
+        W.U8(Byte(I));            // ispe, colr(s) non-essential
     W.EndBox(ipma);
     W.EndBox(iprp);
 
@@ -307,6 +334,14 @@ begin
   finally
     W.Free;
   end;
+end;
+
+function BuildHeifFile(const AHvcC, AItemData: TBytes;
+  ADisplayW, ADisplayH: Integer; const AColor: TNclxColor;
+  const AExif, AIcc: TBytes): TBytes;
+begin
+  Result := BuildHeifFileCropped(AHvcC, AItemData, ADisplayW, ADisplayH,
+    ADisplayW, ADisplayH, AColor, AExif, AIcc);
 end;
 
 function BuildHeifFile(const AHvcC, AItemData: TBytes;

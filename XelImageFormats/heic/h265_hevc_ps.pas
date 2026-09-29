@@ -27,6 +27,11 @@ function ff_hevc_decode_nal_pps(S: PHEVCContext): Integer;
 procedure hevc_pps_free(PPS: PHEVCPPS);
 procedure hevc_sps_free(SPS: PHEVCSPS);
 
+// Scaling lists (7.3.4): the defaults (all flat 4x4, Table 7-6 for the
+// rest), and scaling_list_data() read from S^.HEVClc^.gb into SL.
+procedure set_default_scaling_list_data(SL: PScalingList);
+function scaling_list_data(S: PHEVCContext; SL: PScalingList; SPS: PHEVCSPS): Integer;
+
 implementation
 
 const
@@ -415,6 +420,12 @@ begin
   SPS^.long_term_ref_pics_present_flag := 0;
   SPS^.sps_temporal_mvp_enabled_flag := 1;
   SPS^.sps_strong_intra_smoothing_enable_flag := get_bits1(GB^);
+  // the compact SPS has no scaling lists; take the caller's, if any
+  if S^.ext_sps_scaling <> 0 then
+  begin
+    SPS^.scaling_list_enable_flag := 1;
+    SPS^.scaling_list := S^.ext_sps_scaling_list;
+  end;
   SPS^.vui.sar.Num := 0;
   SPS^.vui.sar.Den := 1;
 
